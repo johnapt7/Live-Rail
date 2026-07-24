@@ -140,7 +140,9 @@ struct JourneyScreen: View {
                 if immediate {
                     immediate = false
                 } else {
-                    try? await Task.sleep(for: .seconds(45))
+                    // Jittered so screens across many phones don't
+                    // synchronise into refresh bursts at the backend.
+                    try? await Task.sleep(for: .seconds(45 * Double.random(in: 0.85...1.15)))
                 }
                 guard !Task.isCancelled else { break }
                 if !isLoading && loadError == nil {
@@ -366,84 +368,28 @@ struct JourneyScreen: View {
     /// last good snapshot on failure and skip the one-time extras
     /// (reliability, map coordinates).
     private func loadDetails(silent: Bool = false) async {
+        // While tracking this train the tracker's own (faster) poll already
+        // fetched this exact snapshot — reuse it instead of duplicating the
+        // request. Initial and foreground loads still fetch fresh.
+        if silent, let snapshot = trackerSnapshot() {
+            if !tracker.movements.isEmpty {
+                movements = tracker.movements.sorted { $0.actualTimestamp > $1.actualTimestamp }
+            }
+            apply(snapshot)
+            withAnimation(.easeOut(duration: 0.35)) {
+                isLoading = false
+            }
+            if let rid = train.rid {
+                await loadTrainExtras(rid: rid)
+            }
+            return
+        }
         do {
             let response = try await APIClient.shared.getServiceDetails(
                 serviceId: train.serviceId,
                 crs: boardingStation.code
             )
-            details = response
-
-            var allStops: [Stop] = []
-
-            // previousCallingPoints are relative to the boarding station, NOT
-            // the train's position — only an actual time proves them passed.
-            for cp in response.previousCallingPoints {
-                allStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
-            }
-
-            // The boarding station itself — sits between previous and subsequent.
-            // This is current/just-passed when the train is in progress.
-            let boardingIsTerminal = response.subsequentCallingPoints.isEmpty
-            let boardingTime = boardingIsTerminal
-                ? (response.scheduledArrival ?? train.time)
-                : (response.scheduledDeparture ?? train.time)
-            let boardingExpected = boardingIsTerminal
-                ? response.expectedArrival
-                : response.expectedDeparture
-            let boardingDeparted = !boardingIsTerminal && TrainTracker.boardingDeparted(
-                details: response,
-                movements: movements,
-                boardingCRS: boardingStation.code
-            )
-            allStops.append(Stop(
-                station: boardingStation.name,
-                crs: boardingStation.code,
-                time: boardingTime,
-                expectedTime: boardingExpected,
-                platform: response.platform ?? train.platform,
-                type: .stop,
-                hasDeparted: boardingDeparted
-            ))
-
-            // All subsequentCallingPoints.
-            for cp in response.subsequentCallingPoints {
-                allStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
-            }
-
-            // Mark first as origin, last as destination.
-            if !allStops.isEmpty {
-                let first = allStops[0]
-                allStops[0] = Stop(
-                    station: first.station, crs: first.crs,
-                    time: first.time, expectedTime: first.expectedTime,
-                    actualTime: first.actualTime,
-                    platform: first.platform, type: .origin,
-                    hasDeparted: first.hasDeparted
-                )
-            }
-            if allStops.count > 1 {
-                let last = allStops[allStops.count - 1]
-                allStops[allStops.count - 1] = Stop(
-                    station: last.station, crs: last.crs,
-                    time: last.time, expectedTime: last.expectedTime,
-                    actualTime: last.actualTime,
-                    platform: last.platform, type: .destination,
-                    hasDeparted: last.hasDeparted
-                )
-            }
-
-            stops = allStops
-            stopTimes = JourneyScreen.parseStopTimes(allStops)
-            // The board station is the row appended after the previous
-            // calling points, so its index is exactly their count. For an
-            // arrival that row IS the destination — the user's journey spans
-            // the whole route, so board from the first stop instead.
-            boardingIndex = train.isArrival
-                ? 0
-                : min(response.previousCallingPoints.count, max(allStops.count - 1, 0))
-            let boardTime = allStops.indices.contains(boardingIndex) ? allStops[boardingIndex].time : ""
-            let lastTime = allStops.last?.time ?? ""
-            duration = computeDuration(from: boardTime, to: lastTime)
+            apply(response)
         } catch {
             // A failed silent refresh keeps showing the last good snapshot.
             if !silent {
@@ -474,6 +420,99 @@ struct JourneyScreen: View {
         if !silent {
             Task { await loadMapCoordinates() }
         }
+    }
+
+    /// The tracker's latest raw snapshot, when it can stand in for this
+    /// screen's own fetch: same service, same board CRS (the calling-point
+    /// split depends on it), and recent enough to be no staler than this
+    /// screen's own refresh cadence would allow.
+    private func trackerSnapshot() -> ServiceDetailsResponse? {
+        guard isTrackingThis,
+              let snapshot = tracker.lastDetails,
+              snapshot.serviceId == train.serviceId,
+              tracker.lastDetailsCRS == boardingStation.code,
+              let polled = tracker.lastPolled,
+              Date().timeIntervalSince(polled) < 60
+        else { return nil }
+        return snapshot
+    }
+
+    /// Rebuilds the screen's snapshot state from a service-details response,
+    /// whether freshly fetched or reused from the tracker's poll.
+    private func apply(_ response: ServiceDetailsResponse) {
+        details = response
+
+        var allStops: [Stop] = []
+
+        // previousCallingPoints are relative to the boarding station, NOT
+        // the train's position — only an actual time proves them passed.
+        for cp in response.previousCallingPoints {
+            allStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
+        }
+
+        // The boarding station itself — sits between previous and subsequent.
+        // This is current/just-passed when the train is in progress.
+        let boardingIsTerminal = response.subsequentCallingPoints.isEmpty
+        let boardingTime = boardingIsTerminal
+            ? (response.scheduledArrival ?? train.time)
+            : (response.scheduledDeparture ?? train.time)
+        let boardingExpected = boardingIsTerminal
+            ? response.expectedArrival
+            : response.expectedDeparture
+        let boardingDeparted = !boardingIsTerminal && TrainTracker.boardingDeparted(
+            details: response,
+            movements: movements,
+            boardingCRS: boardingStation.code
+        )
+        allStops.append(Stop(
+            station: boardingStation.name,
+            crs: boardingStation.code,
+            time: boardingTime,
+            expectedTime: boardingExpected,
+            platform: response.platform ?? train.platform,
+            type: .stop,
+            hasDeparted: boardingDeparted
+        ))
+
+        // All subsequentCallingPoints.
+        for cp in response.subsequentCallingPoints {
+            allStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
+        }
+
+        // Mark first as origin, last as destination.
+        if !allStops.isEmpty {
+            let first = allStops[0]
+            allStops[0] = Stop(
+                station: first.station, crs: first.crs,
+                time: first.time, expectedTime: first.expectedTime,
+                actualTime: first.actualTime,
+                platform: first.platform, type: .origin,
+                hasDeparted: first.hasDeparted
+            )
+        }
+        if allStops.count > 1 {
+            let last = allStops[allStops.count - 1]
+            allStops[allStops.count - 1] = Stop(
+                station: last.station, crs: last.crs,
+                time: last.time, expectedTime: last.expectedTime,
+                actualTime: last.actualTime,
+                platform: last.platform, type: .destination,
+                hasDeparted: last.hasDeparted
+            )
+        }
+
+        stops = allStops
+        stopTimes = JourneyScreen.parseStopTimes(allStops)
+        // The board station is the row appended after the previous
+        // calling points, so its index is exactly their count. For an
+        // arrival that row IS the destination — the user's journey spans
+        // the whole route, so board from the first stop instead.
+        boardingIndex = train.isArrival
+            ? 0
+            : min(response.previousCallingPoints.count, max(allStops.count - 1, 0))
+        let boardTime = allStops.indices.contains(boardingIndex) ? allStops[boardingIndex].time : ""
+        let lastTime = allStops.last?.time ?? ""
+        duration = computeDuration(from: boardTime, to: lastTime)
     }
 
     /// Fetches formation, coach loading, and associations — all served from

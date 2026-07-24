@@ -171,7 +171,9 @@ struct BoardScreen: View {
                 await loadBoard(silent: true)
             }
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Self.autoRefreshInterval))
+                // Jittered so boards across many phones don't synchronise
+                // into refresh bursts at the backend.
+                try? await Task.sleep(for: .seconds(Self.autoRefreshInterval * Double.random(in: 0.85...1.15)))
                 guard !Task.isCancelled else { break }
                 await loadBoard(silent: true)
             }

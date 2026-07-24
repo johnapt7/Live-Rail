@@ -45,6 +45,12 @@ final class TrainTracker {
     var trainStatus: TrainStatus = .onTime
     var lastPolled: Date?
     var movements: [MovementEvent] = []
+    /// Raw service-details snapshot from the latest poll, plus the CRS whose
+    /// board produced it. JourneyScreen reuses this instead of issuing its
+    /// own duplicate fetch while tracking — valid only for a matching CRS,
+    /// because LDBWS splits calling points around the queried station.
+    var lastDetails: ServiceDetailsResponse?
+    var lastDetailsCRS: String?
 
     private var stopTimes: [Date?] = []
     private var alightingCRS: String?
@@ -124,6 +130,8 @@ final class TrainTracker {
         stopTimes = []
         movements = []
         lastPolled = nil
+        lastDetails = nil
+        lastDetailsCRS = nil
         notificationManager.reset()
         announcedPlatform = nil
         notificationBaselineSet = false
@@ -518,13 +526,18 @@ final class TrainTracker {
 
     @MainActor
     private func nextPollDelay() -> Duration {
-        guard let next = nextStopArrivalDate else { return .seconds(45) }
+        // ±15% jitter: identical fixed schedules across many phones would
+        // otherwise synchronise into request bursts at the backend.
+        func jittered(_ seconds: Double) -> Duration {
+            .seconds(seconds * Double.random(in: 0.85...1.15))
+        }
+        guard let next = nextStopArrivalDate else { return jittered(45) }
         let secondsUntil = next.timeIntervalSinceNow
-        if secondsUntil < 0 { return .seconds(15) }
-        if secondsUntil < 60 { return .seconds(8) }
-        if secondsUntil < 180 { return .seconds(15) }
-        if secondsUntil < 600 { return .seconds(30) }
-        return .seconds(60)
+        if secondsUntil < 0 { return jittered(15) }
+        if secondsUntil < 60 { return jittered(8) }
+        if secondsUntil < 180 { return jittered(15) }
+        if secondsUntil < 600 { return jittered(30) }
+        return jittered(60)
     }
 
     private func startPolling() {
@@ -550,6 +563,8 @@ final class TrainTracker {
             serviceId: train.serviceId,
             crs: (boardStation ?? boardingStation)?.code
         ) else { return }
+        lastDetails = details
+        lastDetailsCRS = (boardStation ?? boardingStation)?.code
 
         // Fetch TRUST movements before building stops so departed flags can
         // use this poll's evidence, not the previous one's.
