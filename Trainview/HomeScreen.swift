@@ -29,8 +29,6 @@ struct HomeScreen: View {
     @State private var showDisruptions = false
     @State private var disruptedOperatorCount = 0
     @State private var boardsRefreshID = UUID()
-    // Nearby is a dropdown; remember the choice between launches.
-    @AppStorage("nearbyExpanded") private var nearbyExpanded = false
     @Environment(\.scenePhase) private var scenePhase
     private enum SlotField: Hashable { case from, to }
     @FocusState private var focusedField: SlotField?
@@ -748,81 +746,66 @@ struct HomeScreen: View {
 
     // MARK: - Nearby
 
+    /// Always visible, capped at five stations — nearby is core value, not
+    /// something to hide behind a dropdown the user must discover.
     private var nearbySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Dropdown header: the whole row toggles the section open.
-            Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    nearbyExpanded.toggle()
-                }
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text("Nearby stations")
-                            .font(.display(22))
-                            .tracking(-0.2)
-                            .foregroundStyle(Theme.ink)
-                        Spacer()
-                        if !nearbyStations.isEmpty && nearbyExpanded {
-                            HStack(spacing: 5) {
-                                Image(systemName: "mappin")
-                                    .font(.system(size: 8))
-                                Text("Near you")
-                                    .font(.mono(10, weight: .semibold))
-                                    .tracking(0.4)
-                            }
-                            .foregroundStyle(Theme.ink)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(accent)
-                            .clipShape(Capsule())
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text("Nearby stations")
+                        .font(.display(22))
+                        .tracking(-0.2)
+                        .foregroundStyle(Theme.ink)
+                    Spacer()
+                    if !nearbyStations.isEmpty {
+                        HStack(spacing: 5) {
+                            Image(systemName: "mappin")
+                                .font(.system(size: 8))
+                            Text("Near you")
+                                .font(.mono(10, weight: .semibold))
+                                .tracking(0.4)
                         }
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.inkMute)
-                            .rotationEffect(.degrees(nearbyExpanded ? 180 : 0))
-                            .padding(.leading, 8)
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(accent)
+                        .clipShape(Capsule())
                     }
-                    Text(nearbyExpanded ? "Based on your location" : "Tap to show stations near you")
-                        .font(.mono(11, weight: .medium))
-                        .tracking(0.3)
-                        .foregroundStyle(Theme.inkMute)
                 }
-                .contentShape(Rectangle())
+                Text("Based on your location")
+                    .font(.mono(11, weight: .medium))
+                    .tracking(0.3)
+                    .foregroundStyle(Theme.inkMute)
             }
-            .buttonStyle(.plain)
 
-            if nearbyExpanded {
-                Group {
-                    if !locationManager.hasPermission {
-                        locationPrompt
-                    } else if nearbyError {
-                        nearbyErrorCard
-                    } else if !nearbyDidLoad {
-                        loadingCard
-                    } else if nearbyStations.isEmpty {
-                        VStack(spacing: 4) {
-                            Text("No stations nearby")
-                                .font(.display(18))
-                            Text("Try searching by name or code")
-                                .font(.ui(11))
-                                .foregroundStyle(Theme.inkMute)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 28)
-                        .background(Theme.card)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                    } else {
-                        StationListCard(
-                            stations: nearbyStations,
-                            style: .nearby,
-                            accent: accent,
-                            homeStore: homeStore,
-                            onPick: pickStation
-                        )
+            Group {
+                if !locationManager.hasPermission {
+                    locationPrompt
+                } else if nearbyError {
+                    nearbyErrorCard
+                } else if !nearbyDidLoad {
+                    loadingCard
+                } else if nearbyStations.isEmpty {
+                    VStack(spacing: 4) {
+                        Text("No stations nearby")
+                            .font(.display(18))
+                        Text("Try searching by name or code")
+                            .font(.ui(11))
+                            .foregroundStyle(Theme.inkMute)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .background(Theme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                } else {
+                    StationListCard(
+                        stations: Array(nearbyStations.prefix(5)),
+                        style: .nearby,
+                        accent: accent,
+                        homeStore: homeStore,
+                        onPick: pickStation
+                    )
                 }
-                .transition(.opacity.combined(with: .offset(y: -6)))
             }
         }
         .padding(.horizontal, 18)

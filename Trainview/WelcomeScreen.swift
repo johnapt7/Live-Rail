@@ -94,8 +94,9 @@ struct WelcomeScreen: View {
             )
         )
         .foregroundStyle(Theme.ink)
-        // Bright brand hero in both colour schemes.
-        .environment(\.colorScheme, .light)
+        // Unlike the journey hero, welcome follows the system scheme — a
+        // bright teal block on an otherwise warm dark screen read as a
+        // leftover, not a signature.
     }
 
     private var brandMark: some View {

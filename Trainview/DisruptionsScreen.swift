@@ -276,12 +276,19 @@ struct DisruptionsScreen: View {
                         }
                     }
                     Spacer()
-                    if !isGood {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Theme.inkMute)
-                            .rotationEffect(.degrees(expanded ? 180 : 0))
+                    // Fixed slot whether or not a chevron shows, so the
+                    // status dots form one straight column down the list.
+                    Group {
+                        if !isGood {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Theme.inkMute)
+                                .rotationEffect(.degrees(expanded ? 180 : 0))
+                        } else {
+                            Color.clear
+                        }
                     }
+                    .frame(width: 12, height: 12)
                     Circle()
                         .fill(isGood ? Theme.perfGood : Theme.cancelledText)
                         .frame(width: 10, height: 10)

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Trainview train logo, dark appearance</title>
+  <desc id="desc">A bold front-facing train above railway tracks widening toward the viewer, with a lime live-service indicator.</desc>
+
+  <rect width="1024" height="1024" fill="#0D0D0B"/>
+
+  <g fill="none" stroke="#F4F1E8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M384 754H640" stroke-width="34"/>
+    <path d="M338 828H686" stroke-width="38"/>
+    <path d="M276 916H748" stroke-width="42"/>
+    <path d="M432 650C416 746 365 842 286 920" stroke-width="48"/>
+    <path d="M592 650C608 746 659 842 738 920" stroke-width="48"/>
+  </g>
+
+  <path
+    fill="#F4F1E8"
+    d="M284 596V382C284 234 371 154 512 154S740 234 740 382V596C740 675 691 731 620 750L588 758H436L404 750C333 731 284 675 284 596Z"
+  />
+
+  <path
+    fill="#0D0D0B"
+    d="M346 406V354C346 271 408 226 512 226S678 271 678 354V406C678 421 666 433 651 433H373C358 433 346 421 346 406Z"
+  />
+  <path d="M512 226V433" stroke="#F4F1E8" stroke-width="30"/>
+
+  <rect x="452" y="184" width="120" height="24" rx="12" fill="#C9E265"/>
+  <circle cx="372" cy="582" r="29" fill="#0D0D0B"/>
+  <circle cx="652" cy="582" r="29" fill="#0D0D0B"/>
+  <circle cx="512" cy="596" r="24" fill="#C9E265"/>
+  <rect x="474" y="696" width="76" height="40" rx="20" fill="#0D0D0B"/>
+</svg>

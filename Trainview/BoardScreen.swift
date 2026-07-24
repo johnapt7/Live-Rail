@@ -395,7 +395,7 @@ struct BoardScreen: View {
                     .foregroundStyle(Theme.inkMute)
             }
 
-            HStack(alignment: .bottom) {
+            HStack(alignment: .center) {
                 Text(station.name)
                     .font(.display(30))
                     .tracking(-0.3)
