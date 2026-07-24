@@ -94,11 +94,14 @@ struct JourneyScreen: View {
                         if let divide = divideAssociations.first {
                             dividesBanner(divide)
                         }
+                        // Urgency order: the mid-journey question is "when
+                        // do we reach X?" — stops come first; coach comfort,
+                        // reliability and the map are leisure-grade reading.
+                        stopsSection
                         if !coaches.isEmpty {
                             coachSection
                         }
                         performanceCard
-                        stopsSection
                         JourneyMapSection(
                             stationPins: stationPins,
                             legPaths: legPaths,
@@ -107,13 +110,18 @@ struct JourneyScreen: View {
                             tracker: tracker,
                             serviceId: train.serviceId
                         )
-                        .padding(.bottom, 48)
+                        .padding(.bottom, 96)
                     }
                     .transition(.opacity.combined(with: .offset(y: 8)))
                 }
             }
         }
         .background(Theme.cream)
+        // The marquee action anchors as a persistent full-width bar — never
+        // a badge-sized pill that changes meaning by status.
+        .safeAreaInset(edge: .bottom) {
+            trackBottomBar
+        }
         // The hero paints its brand colour up behind the status bar; content
         // clears it via the hero's own top padding.
         .ignoresSafeArea(edges: .top)
@@ -819,70 +827,93 @@ struct JourneyScreen: View {
             .clipShape(Capsule())
 
         case .delayed:
-            Button {
-                if isTrackingThis { tracker.stopTracking() } else { showTrackingSheet = true }
-            } label: {
-                HStack(spacing: 8) {
-                    if isTrackingThis {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 9, weight: .bold))
-                    } else {
-                        LiveDotColored(color: Theme.trackPillDelayedFg)
+            // Pure status — the tracking action lives in the bottom bar,
+            // never disguised as a warning badge.
+            HStack(spacing: 8) {
+                LiveDotColored(color: Theme.trackPillDelayedFg)
+                Text("Delayed")
+                    .font(.ui(11, weight: .semibold))
+                Text(train.statusNote)
+                    .font(.mono(10, weight: .medium))
+                    .tracking(0.4)
+                    .foregroundStyle(Theme.trackPillDelayedFg.opacity(0.7))
+                    .padding(.leading, 4)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(Theme.trackPillDelayedFg.opacity(0.25))
+                            .frame(width: 1)
                     }
-                    Text(isTrackingThis ? "Stop tracking" : "Delayed")
-                        .font(.ui(11, weight: .semibold))
-                    Text(train.statusNote)
-                        .font(.mono(10, weight: .medium))
-                        .tracking(0.4)
-                        .foregroundStyle(Theme.trackPillDelayedFg.opacity(0.7))
-                        .padding(.leading, 4)
-                        .overlay(alignment: .leading) {
-                            Rectangle()
-                                .fill(Theme.trackPillDelayedFg.opacity(0.25))
-                                .frame(width: 1)
-                        }
-                }
-                .padding(.horizontal, 12)
-                .padding(.leading, -4)
-                .padding(.vertical, 6)
-                .foregroundStyle(Theme.trackPillDelayedFg)
-                .background(Theme.trackPillDelayedBg)
-                .clipShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.leading, -4)
+            .padding(.vertical, 6)
+            .foregroundStyle(Theme.trackPillDelayedFg)
+            .background(Theme.trackPillDelayedBg)
+            .clipShape(Capsule())
 
         case .onTime:
+            HStack(spacing: 8) {
+                LiveDotColored(color: accent)
+                Text("On time")
+                    .font(.ui(11, weight: .semibold))
+                Text(train.statusNote)
+                    .font(.mono(10, weight: .medium))
+                    .tracking(0.4)
+                    .foregroundStyle(accent.opacity(0.7))
+                    .padding(.leading, 4)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(accent.opacity(0.25))
+                            .frame(width: 1)
+                    }
+            }
+            .padding(.horizontal, 12)
+            .padding(.leading, -4)
+            .padding(.vertical, 6)
+            .foregroundStyle(accent)
+            .background(Theme.ink)
+            .clipShape(Capsule())
+        }
+    }
+
+    /// The app's marquee action as a persistent full-width bottom bar with
+    /// one label per state. Cancelled journeys hide it — the alternatives
+    /// section owns that moment.
+    @ViewBuilder
+    private var trackBottomBar: some View {
+        if !isLoading, loadError == nil, train.status != .cancelled {
             Button {
-                if isTrackingThis { tracker.stopTracking() } else { showTrackingSheet = true }
+                if isTrackingThis {
+                    tracker.stopTracking()
+                } else {
+                    showTrackingSheet = true
+                }
             } label: {
                 HStack(spacing: 8) {
                     if isTrackingThis {
                         Image(systemName: "stop.fill")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                     } else {
                         LiveDotColored(color: accent)
                     }
-                    Text(isTrackingThis ? "Stop tracking" : "Track live")
-                        .font(.ui(11, weight: .semibold))
-                    Text(train.statusNote)
-                        .font(.mono(10, weight: .medium))
-                        .tracking(0.4)
-                        .foregroundStyle(accent.opacity(0.7))
-                        .padding(.leading, 4)
-                        .overlay(alignment: .leading) {
-                            Rectangle()
-                                .fill(accent.opacity(0.25))
-                                .frame(width: 1)
-                        }
+                    Text(isTrackingThis ? "Stop tracking" : "Track this train")
+                        .font(.ui(15, weight: .semibold))
                 }
-                .padding(.horizontal, 12)
-                .padding(.leading, -4)
-                .padding(.vertical, 6)
-                .foregroundStyle(accent)
-                .background(Theme.ink)
-                .clipShape(Capsule())
+                .foregroundStyle(isTrackingThis ? Theme.ink : accent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(isTrackingThis ? Theme.card : Theme.ink)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(isTrackingThis ? Theme.lineStrong : .clear, lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
+            .background(Theme.cream.opacity(0.94))
         }
     }
 
@@ -1736,7 +1767,9 @@ private struct LiveTrackingStrip: View {
             Button {
                 tracker.stopTracking()
             } label: {
-                Text("Stop")
+                // Same label everywhere: stopping lives here and in the
+                // bottom bar, nowhere else, always called the same thing.
+                Text("Stop tracking")
                     .font(.ui(11, weight: .semibold))
                     .foregroundStyle(Theme.inkSoft)
                     .padding(.horizontal, 10)

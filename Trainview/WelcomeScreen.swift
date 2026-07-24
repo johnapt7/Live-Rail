@@ -1,8 +1,13 @@
 import SwiftUI
+import CoreLocation
 
 struct WelcomeScreen: View {
     let accent: Color
     let onContinue: () -> Void
+
+    @State private var locationManager = LocationManager()
+    @State private var nearestStation: Station?
+    @State private var seeding = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -16,6 +21,47 @@ struct WelcomeScreen: View {
         .background(Theme.cream)
         // The accent hero bleeds up behind the status bar.
         .ignoresSafeArea(edges: .top)
+        .onChange(of: locationManager.location) { _, coord in
+            guard seeding, nearestStation == nil, let coord else { return }
+            Task {
+                guard let wrapper = try? await APIClient.shared.getNearbyStations(
+                    lat: coord.latitude, lng: coord.longitude, limit: 1
+                ), let nearest = wrapper.stations?.first else {
+                    onContinue()
+                    return
+                }
+                withAnimation(.easeOut(duration: 0.25)) {
+                    nearestStation = Station(from: nearest)
+                }
+            }
+        }
+        .onChange(of: locationManager.authorizationStatus) { _, _ in
+            // Declined the prompt mid-seeding: enter Home without the offer.
+            if seeding, locationManager.isDenied {
+                onContinue()
+            }
+        }
+    }
+
+    /// A brand-new Home has nothing to show until stations are earned
+    /// through use — so the first station is offered here, while location
+    /// permission is fresh, and Home demonstrates live departures
+    /// immediately.
+    private func beginSeeding() {
+        guard !seeding else { return }
+        if locationManager.isDenied {
+            onContinue()
+            return
+        }
+        seeding = true
+        locationManager.requestLocation()
+        // Watchdog: never hold the user hostage to a slow fix or fetch.
+        Task {
+            try? await Task.sleep(for: .seconds(7))
+            if nearestStation == nil {
+                onContinue()
+            }
+        }
     }
 
     // MARK: - Hero
@@ -138,18 +184,30 @@ struct WelcomeScreen: View {
 
     private var footerSection: some View {
         VStack(spacing: 12) {
-            Button(action: onContinue) {
-                HStack(spacing: 10) {
-                    Text("Get started")
-                        .font(.ui(15, weight: .semibold))
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .semibold))
+            if let nearest = nearestStation {
+                nearestStationOffer(nearest)
+            } else {
+                Button(action: beginSeeding) {
+                    HStack(spacing: 10) {
+                        if seeding {
+                            ProgressView()
+                                .tint(accent)
+                            Text("Finding your nearest station…")
+                                .font(.ui(15, weight: .semibold))
+                        } else {
+                            Text("Get started")
+                                .font(.ui(15, weight: .semibold))
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(accent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(Theme.ink)
+                    .clipShape(Capsule())
                 }
-                .foregroundStyle(accent)
-                .frame(maxWidth: .infinity)
-                .frame(height: 54)
-                .background(Theme.ink)
-                .clipShape(Capsule())
+                .disabled(seeding)
             }
 
             Text("You can change permissions at any time in Settings.")
@@ -160,6 +218,39 @@ struct WelcomeScreen: View {
         .padding(.horizontal, 22)
         .padding(.top, 22)
         .padding(.bottom, 24)
+    }
+
+    private func nearestStationOffer(_ nearest: Station) -> some View {
+        VStack(spacing: 10) {
+            VStack(spacing: 4) {
+                Text("YOUR NEAREST STATION")
+                    .font(.mono(10, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(Theme.inkMute)
+                Text(nearest.name)
+                    .font(.display(20))
+                    .tracking(-0.2)
+                    .foregroundStyle(Theme.ink)
+            }
+            Button {
+                HomeStationsStore.shared.add(nearest)
+                onContinue()
+            } label: {
+                Text("Add as home station")
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(Theme.ink)
+                    .clipShape(Capsule())
+            }
+            Button(action: onContinue) {
+                Text("Not now")
+                    .font(.ui(13, weight: .medium))
+                    .foregroundStyle(Theme.inkMute)
+            }
+        }
+        .transition(.opacity.combined(with: .offset(y: 8)))
     }
 }
 

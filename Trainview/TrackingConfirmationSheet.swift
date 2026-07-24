@@ -45,7 +45,7 @@ struct TrackingConfirmationSheet: View {
             }
         }
         .background(Theme.cream)
-        .presentationDetents([.fraction(0.8)])
+        .presentationDetents([.fraction(0.62)])
         .presentationDragIndicator(.hidden)
         .onAppear {
             // Arrivals default to getting off at the arrivals-board station —
@@ -81,32 +81,19 @@ struct TrackingConfirmationSheet: View {
 
             trainSummary
 
+            // The one decision that matters before boarding. Everything
+            // else — notification detail included — is discoverable later;
+            // a time-critical action gets one glance and one tap.
             if !alightingOptions.isEmpty {
                 alightingPicker
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                featureRow(icon: "location.fill", text: "See which stop the train is at in real time")
-                featureRow(icon: "rectangle.stack.fill", text: "Track from the lock screen with Live Activity")
-
-                Text("NOTIFICATIONS YOU'LL GET")
-                    .font(.mono(10, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.inkMute)
-                    .padding(.top, 6)
-
-                notificationRow("clock.badge.exclamationmark", "Departure reminder — 5 minutes before it leaves, with the platform")
-                notificationRow("tram.fill", train.isArrival
-                    ? "As the train travels in from \(boardingStation.name)"
-                    : "When your train departs \(boardingStation.name)")
-                notificationRow("arrow.left.arrow.right", "Platform changes and confirmations")
-                notificationRow("exclamationmark.triangle.fill", "Delays and cancellation")
-                notificationRow("mappin.and.ellipse", "Each stop along the way as the train calls")
-                notificationRow("figure.walk", "When your stop is next")
-            }
-            .padding(16)
-            .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            Text("Live progress on your lock screen. Alerts only when something needs you — platform changes, delays, your stop coming up.")
+                .font(.ui(12))
+                .foregroundStyle(Theme.inkSoft)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
 
             VStack(spacing: 10) {
                 Button {
@@ -250,33 +237,4 @@ struct TrackingConfirmationSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func featureRow(icon: String, text: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.ink)
-                .frame(width: 26, height: 26)
-                .background(accent)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-            Text(text)
-                .font(.ui(12))
-                .foregroundStyle(Theme.inkSoft)
-        }
-    }
-
-    /// Compact row for the notifications list — quieter than featureRow so
-    /// six of them don't overwhelm the sheet.
-    private func notificationRow(_ icon: String, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(accent)
-                .frame(width: 18, alignment: .center)
-                .padding(.top, 1)
-            Text(text)
-                .font(.ui(12))
-                .foregroundStyle(Theme.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
 }

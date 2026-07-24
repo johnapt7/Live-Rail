@@ -27,6 +27,7 @@ struct HomeScreen: View {
     @State private var showFAQ = false
     @State private var showAccount = false
     @State private var showDisruptions = false
+    @State private var disruptedOperatorCount = 0
     @State private var boardsRefreshID = UUID()
     // Nearby is a dropdown; remember the choice between launches.
     @AppStorage("nearbyExpanded") private var nearbyExpanded = false
@@ -139,6 +140,17 @@ struct HomeScreen: View {
             // Refetch the pinned boards whenever the app comes back.
             if phase == .active {
                 boardsRefreshID = UUID()
+                refreshDisruptionBadge()
+            }
+        }
+        .task { refreshDisruptionBadge() }
+    }
+
+    private func refreshDisruptionBadge() {
+        Task {
+            guard let response = try? await APIClient.shared.getTOCIndicators() else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                disruptedOperatorCount = response.indicators.filter { $0.status != "Good service" }.count
             }
         }
     }
@@ -305,7 +317,21 @@ struct HomeScreen: View {
                 .foregroundStyle(Theme.ink)
             Spacer()
             HStack(spacing: 8) {
+                // Badged with the live count so a melting-down network never
+                // looks identical to a quiet one behind a blind door.
                 IconButton(systemName: "exclamationmark.triangle", size: 14) { showDisruptions = true }
+                    .overlay(alignment: .topTrailing) {
+                        if disruptedOperatorCount > 0 {
+                            Text("\(disruptedOperatorCount)")
+                                .font(.mono(9, weight: .bold))
+                                .foregroundStyle(Theme.trackPillDelayedFg)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Theme.trackPillDelayedBg)
+                                .clipShape(Capsule())
+                                .offset(x: 4, y: -3)
+                        }
+                    }
                 IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
             }
         }
@@ -441,6 +467,12 @@ struct HomeScreen: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        // The slot a tapped station will fill is visible, not a hidden
+        // function of focus state: the target row carries the accent wash.
+        .background(
+            plannerActive && station == nil && activeSlot == slot
+                ? accent.opacity(0.12) : .clear
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             if station == nil { focusedField = slot }
@@ -450,8 +482,12 @@ struct HomeScreen: View {
     private var viewAllDeparturesButton: some View {
         Button(action: viewAllDepartures) {
             HStack(spacing: 8) {
-                Text("View all departures")
+                // Named, so the shortcut is explicit rather than a
+                // convention to stumble into (Return on the empty To field
+                // does the same thing).
+                Text("View all departures from \(fromStation?.name ?? "")")
                     .font(.ui(14, weight: .semibold))
+                    .lineLimit(1)
                 Image(systemName: "arrow.right")
                     .font(.system(size: 12, weight: .semibold))
             }
@@ -533,6 +569,16 @@ struct HomeScreen: View {
     /// Live journey pinned to the top of the home screen while tracking is
     /// active. Tapping it returns to the journey screen. Stays visible during
     /// station search so the running journey is never more than one tap away.
+    /// Status colour for the tracked card — the most-glanced surface in the
+    /// app must never show a +15 min train identically to an on-time one.
+    private var trackedStatusTint: Color {
+        switch tracker.trainStatus {
+        case .cancelled: return Theme.cancelledText
+        case .delayed: return Theme.delayedText
+        case .onTime: return accent
+        }
+    }
+
     @ViewBuilder
     private var trackedTrainSection: some View {
         if tracker.isTracking, let train = tracker.trackedTrain {
@@ -541,9 +587,9 @@ struct HomeScreen: View {
                     HStack(spacing: 12) {
                         Image(systemName: "tram.fill")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.ink)
+                            .foregroundStyle(tracker.trainStatus == .onTime ? Theme.ink : Theme.card)
                             .frame(width: 42, height: 42)
-                            .background(accent)
+                            .background(trackedStatusTint)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
 
                         VStack(alignment: .leading, spacing: 3) {
@@ -553,8 +599,8 @@ struct HomeScreen: View {
                                 .foregroundStyle(Theme.ink)
                                 .lineLimit(1)
                             Text(trackedSubtitle(for: train))
-                                .font(.ui(11))
-                                .foregroundStyle(Theme.inkMute)
+                                .font(.ui(11, weight: tracker.trainStatus == .onTime ? .regular : .semibold))
+                                .foregroundStyle(tracker.trainStatus == .onTime ? Theme.inkMute : trackedStatusTint)
                                 .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -570,7 +616,7 @@ struct HomeScreen: View {
                         ZStack(alignment: .leading) {
                             Capsule().fill(Theme.line)
                             Capsule()
-                                .fill(accent)
+                                .fill(trackedStatusTint)
                                 .frame(width: max(6, geo.size.width * tracker.overallProgress))
                         }
                     }
@@ -582,7 +628,10 @@ struct HomeScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(Theme.lineStrong, lineWidth: 1)
+                        .strokeBorder(
+                            tracker.trainStatus == .onTime ? Theme.lineStrong : trackedStatusTint.opacity(0.55),
+                            lineWidth: 1
+                        )
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -593,16 +642,21 @@ struct HomeScreen: View {
     }
 
     private func trackedSubtitle(for train: Train) -> String {
+        let base: String
         if tracker.isBoarding {
-            return "Boarding · departs \(train.time)"
+            base = "Boarding · departs \(train.time)"
+        } else if !tracker.nextStopName.isEmpty {
+            base = tracker.nextStopExpectedTime.isEmpty
+                ? "Next stop \(tracker.nextStopName)"
+                : "Next stop \(tracker.nextStopName) · \(tracker.nextStopExpectedTime)"
+        } else {
+            base = "Tracking live"
         }
-        if !tracker.nextStopName.isEmpty {
-            if !tracker.nextStopExpectedTime.isEmpty {
-                return "Next stop \(tracker.nextStopName) · \(tracker.nextStopExpectedTime)"
-            }
-            return "Next stop \(tracker.nextStopName)"
+        switch tracker.trainStatus {
+        case .cancelled: return "Cancelled · \(base)"
+        case .delayed: return "Delayed · \(base)"
+        case .onTime: return base
         }
-        return "Tracking live"
     }
 
     private var journeysSection: some View {

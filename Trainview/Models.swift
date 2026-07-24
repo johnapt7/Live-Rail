@@ -284,7 +284,10 @@ enum BoardMode: String, CaseIterable {
 enum FilterMode: String, CaseIterable {
     case all
     case onTime = "on-time"
-    case intercity
+    // Replaced a hard-coded "Intercity" operator whitelist that promised a
+    // service class the data doesn't express (and matched zero trains on
+    // many boards). Delayed-or-cancelled is a fact the board really knows.
+    case disrupted
 }
 
 struct StationPin: Identifiable {

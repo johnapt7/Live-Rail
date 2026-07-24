@@ -37,6 +37,7 @@ struct BoardScreen: View {
     @State private var serverFilterConfirmed = false
     @State private var callingPointsTasks: [Task<Void, Never>] = []
     @State private var showFAQ = false
+    @State private var showTimeSheet = false
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
     @State private var filterDestination: Station?
@@ -64,9 +65,7 @@ struct BoardScreen: View {
         switch filter {
         case .all: result = services
         case .onTime: result = services.filter { $0.status == .onTime }
-        case .intercity: result = services.filter {
-            ["GR", "XC", "AW", "GW", "TP", "VT", "EM", "HT", "GC"].contains($0.operatorCode)
-        }
+        case .disrupted: result = services.filter { $0.status != .onTime }
         }
         // The banner promises "Calling at X", so a train counts if it
         // terminates at X or its known calling points include X. Skip
@@ -200,6 +199,9 @@ struct BoardScreen: View {
         }
         .sheet(isPresented: $showFAQ) {
             FAQSheet()
+        }
+        .sheet(isPresented: $showTimeSheet) {
+            timeTravelSheet
         }
     }
 
@@ -399,15 +401,25 @@ struct BoardScreen: View {
                     .tracking(-0.3)
                     .lineLimit(1)
                 Spacer()
+                // In-situ home-station toggle — the board is where users
+                // meet stations, so this is where the affordance lives.
+                // (Replaces a second departures/arrivals switch that
+                // duplicated the top-bar capsule in a different icon
+                // language.)
                 Button {
-                    mode = isArrival ? .departures : .arrivals
-                    filter = .all
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        if homeStore.contains(station) {
+                            homeStore.remove(station)
+                        } else {
+                            homeStore.add(station)
+                        }
+                    }
                 } label: {
-                    Image(systemName: "arrow.left.arrow.right")
+                    Image(systemName: homeStore.contains(station) ? "house.fill" : "house")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(accent)
+                        .foregroundStyle(homeStore.contains(station) ? accent : Theme.inkMute)
                         .frame(width: 34, height: 34)
-                        .background(Theme.ink)
+                        .background(homeStore.contains(station) ? Theme.ink : Theme.ink.opacity(0.06))
                         .clipShape(Circle())
                 }
             }
@@ -568,14 +580,12 @@ struct BoardScreen: View {
             : RecentJourney(origin: station, destination: dest)
     }
 
-    /// The single station the typed text resolves to among trains actually
-    /// on this board (headline stations and known calling points). Nil while
-    /// the text is ambiguous or matches nothing, so the save star only
-    /// appears once the search means one specific place the board serves.
-    private var liveSearchMatch: Station? {
-        guard filterDestination == nil else { return nil }
+    /// Stations the typed text matches among trains actually on this board
+    /// (headline stations and known calling points), keyed by CRS.
+    private var liveSearchMatches: [String: String] {
+        guard filterDestination == nil else { return [:] }
         let query = searchText.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return nil }
+        guard !query.isEmpty else { return [:] }
         var matches: [String: String] = [:]
         for train in services {
             if isArrival {
@@ -595,8 +605,36 @@ struct BoardScreen: View {
             }
         }
         matches.removeValue(forKey: station.code)
+        return matches
+    }
+
+    /// The single station the typed text resolves to. Nil while the text is
+    /// ambiguous or matches nothing, so the save star and filter promotion
+    /// only exist once the search means one specific place the board serves.
+    private var liveSearchMatch: Station? {
+        let matches = liveSearchMatches
         guard matches.count == 1, let match = matches.first else { return nil }
         return Station(code: match.key, name: match.value)
+    }
+
+    /// Promotes the live text search into the locked server-side filter —
+    /// the complete answer, including trains whose calling points haven't
+    /// loaded yet. Return promotes; the banner's ✕ clears.
+    private func promoteSearchToFilter() {
+        guard let match = liveSearchMatch else { return }
+        searchFocused = false
+        searchText = ""
+        withAnimation(.easeOut(duration: 0.2)) {
+            filterDestination = match
+        }
+        // Record direction-correct: an arrivals filter means the user
+        // travels FROM the matched station TO this one.
+        if isArrival {
+            journeysStore.add(origin: match, destination: station)
+        } else {
+            journeysStore.add(origin: station, destination: match)
+        }
+        Task { await loadBoard() }
     }
 
     /// Journey for the unambiguous live match, direction-corrected the same
@@ -614,15 +652,40 @@ struct BoardScreen: View {
     /// only ever matches what's on the board. A board opened from a saved
     /// journey shows the locked filter banner with save + clear instead.
     private var destinationSearchBar: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 5) {
             if filterDestination != nil {
                 activeFilterBar
             } else {
                 searchField
+                searchHint
             }
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)
+    }
+
+    /// Teaches the search's two invisible rules the moment they're relevant:
+    /// what the star will save, and that Return upgrades a resolved search
+    /// into the complete server-side filter.
+    @ViewBuilder
+    private var searchHint: some View {
+        let matches = liveSearchMatches
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            Group {
+                if let match = liveSearchMatch {
+                    Text("Return shows every train calling at \(match.name) · star saves the journey")
+                } else if matches.count > 1 {
+                    Text("Matches \(matches.count) stations — keep typing")
+                } else {
+                    Text("No station on this board matches")
+                }
+            }
+            .font(.mono(10))
+            .tracking(0.3)
+            .foregroundStyle(Theme.inkMute)
+            .padding(.leading, 4)
+            .transition(.opacity)
+        }
     }
 
     private var searchField: some View {
@@ -635,7 +698,8 @@ struct BoardScreen: View {
                 .focused($searchFocused)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.words)
-                .submitLabel(.done)
+                .submitLabel(.search)
+                .onSubmit { promoteSearchToFilter() }
             if let journey = liveSearchJourney {
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -728,10 +792,10 @@ struct BoardScreen: View {
 
     private var filterRow: some View {
         HStack {
+            // The natural target for "show me the 5pm trains" — always
+            // tappable, not just a reset at the extremes of the list.
             Button {
-                guard timeOffset != 0 else { return }
-                timeOffset = 0
-                Task { await loadBoard() }
+                showTimeSheet = true
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: timeOffset == 0 ? "clock" : "clock.arrow.circlepath")
@@ -739,28 +803,84 @@ struct BoardScreen: View {
                     Text("\(timeLabel) \u{00B7} \(timeString)")
                         .font(.mono(11, weight: .medium))
                         .tracking(0.8)
-                    if timeOffset != 0 {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
-                    }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7, weight: .bold))
                 }
                 .foregroundStyle(timeOffset == 0 ? Theme.inkSoft : Theme.ink)
-                .padding(.horizontal, timeOffset != 0 ? 9 : 0)
-                .padding(.vertical, timeOffset != 0 ? 5 : 0)
-                .background(timeOffset != 0 ? accent.opacity(0.25) : .clear)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(timeOffset != 0 ? accent.opacity(0.25) : Theme.ink.opacity(0.05))
                 .clipShape(Capsule())
             }
-            .disabled(timeOffset == 0)
             Spacer()
             HStack(spacing: 6) {
                 filterChip("All", mode: .all)
                 filterChip("On time", mode: .onTime)
-                filterChip("Intercity", mode: .intercity)
+                filterChip("Disrupted", mode: .disrupted)
             }
         }
         .padding(.horizontal, 18)
         .padding(.top, 18)
         .padding(.bottom, 8)
+    }
+
+    /// Compact time-travel sheet: quick offsets plus a wheel, all applied
+    /// through the same board reload as the earlier/later list buttons.
+    private var timeTravelSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("SHOW TRAINS")
+                .font(.mono(11, weight: .semibold))
+                .tracking(1.4)
+                .foregroundStyle(Theme.inkMute)
+            HStack(spacing: 8) {
+                quickOffsetChip("Now", offset: 0)
+                quickOffsetChip("+30 min", offset: 30)
+                quickOffsetChip("+1 hour", offset: 60)
+                quickOffsetChip("Earlier", offset: -30)
+            }
+            DatePicker(
+                "Around",
+                selection: Binding(
+                    get: { Date().addingTimeInterval(TimeInterval(timeOffset * 60)) },
+                    set: { picked in
+                        // LDBWS accepts −120…+119 minutes from now.
+                        let minutes = Int((picked.timeIntervalSinceNow / 60).rounded())
+                        applyTimeOffset(max(-120, min(119, minutes)))
+                    }
+                ),
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+            Text("Live boards cover two hours back to two hours ahead.")
+                .font(.ui(11))
+                .foregroundStyle(Theme.inkMute)
+        }
+        .padding(20)
+        .presentationDetents([.height(340)])
+        .presentationBackground(Theme.cream)
+    }
+
+    private func quickOffsetChip(_ label: String, offset: Int) -> some View {
+        Button {
+            applyTimeOffset(offset)
+            showTimeSheet = false
+        } label: {
+            Text(label)
+                .font(.ui(12, weight: .semibold))
+                .foregroundStyle(timeOffset == offset ? Theme.ink : Theme.inkSoft)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(timeOffset == offset ? accent : Theme.ink.opacity(0.06))
+                .clipShape(Capsule())
+        }
+    }
+
+    private func applyTimeOffset(_ offset: Int) {
+        guard offset != timeOffset else { return }
+        timeOffset = offset
+        Task { await loadBoard() }
     }
 
     private func filterChip(_ label: String, mode: FilterMode) -> some View {

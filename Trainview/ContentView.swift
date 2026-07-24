@@ -16,6 +16,11 @@ struct ContentView: View {
     // Owned here (not in BoardScreen) so departures/arrivals survives
     // navigating into a train and back; reset when a new board opens.
     @State private var boardMode: BoardMode = .departures
+    /// Where the journey screen's back button actually returns to. Entering
+    /// from a board goes back to that board; entering from Home, a
+    /// notification, or the Live Activity goes back to Home — the stack is
+    /// remembered, never invented.
+    @State private var journeyReturnScreen: AppScreen = .departures
     @State private var tracker = TrainTracker()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -41,6 +46,7 @@ struct ContentView: View {
                     initialFilterDestination: pendingJourneyFilter,
                     onOpenTrain: { train in
                         activeTrain = train
+                        journeyReturnScreen = .departures
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .journey
                         }
@@ -60,7 +66,7 @@ struct ContentView: View {
                         tracker: tracker,
                         onBack: {
                             withAnimation(.easeInOut(duration: 0.25)) {
-                                screen = .departures
+                                screen = journeyReturnScreen
                             }
                         },
                         onSelectTrain: { alternative in
@@ -166,6 +172,7 @@ struct ContentView: View {
                 if let anchor = tracker.boardStation ?? tracker.boardingStation {
                     activeStation = anchor
                 }
+                journeyReturnScreen = .tabs
                 withAnimation(.easeInOut(duration: 0.25)) {
                     screen = .journey
                 }
@@ -205,6 +212,9 @@ struct ContentView: View {
             if let anchor = tracker.boardStation ?? tracker.boardingStation {
                 activeStation = anchor
             }
+            // Notification and Live Activity entries never visited a board
+            // on the way in — back goes Home, not to an invented board.
+            journeyReturnScreen = .tabs
             withAnimation(.easeInOut(duration: 0.25)) {
                 screen = .journey
             }
