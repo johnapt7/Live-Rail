@@ -68,7 +68,9 @@ final class TrainTracker {
     // first poll so a resumed session doesn't replay old alerts.
     private var notificationBaselineSet = false
     private var didNotifyDeparted = false
-    private var lastNotifiedNextStop = 1
+    /// Stops whose ten-minutes-out alert has fired, keyed by CRS (or
+    /// index+name when the feed carries none) — each stop alerts once.
+    private var alertedProximityStops: Set<String> = []
 
     private static let snapshotKey = "trackingSnapshot"
 
@@ -83,7 +85,7 @@ final class TrainTracker {
         isTracking = true
         notificationBaselineSet = false
         didNotifyDeparted = false
-        lastNotifiedNextStop = 1
+        alertedProximityStops = []
         saveSnapshot(train: train, boardingStation: boardingStation)
         recalculatePosition()
         startLiveActivity(train: train, stops: trackedStops)
@@ -116,7 +118,7 @@ final class TrainTracker {
         announcedPlatform = nil
         notificationBaselineSet = false
         didNotifyDeparted = false
-        lastNotifiedNextStop = 1
+        alertedProximityStops = []
         endLiveActivity()
         UserDefaults.standard.removeObject(forKey: Self.snapshotKey)
     }
@@ -672,11 +674,12 @@ final class TrainTracker {
         updateLiveActivity()
 
         // Baseline on the first poll of a session: a resumed journey must not
-        // replay departure/stop alerts for legs already travelled.
+        // replay the departure alert for a leg already travelled. Proximity
+        // alerts need no baseline — they only ever concern the CURRENT next
+        // stop, so a still-true alert after resume is fresh, not a replay.
         if !notificationBaselineSet {
             notificationBaselineSet = true
             didNotifyDeparted = boardingHasDeparted
-            lastNotifiedNextStop = nextStopIndex
         }
 
         if boardingHasDeparted {
@@ -698,37 +701,34 @@ final class TrainTracker {
             notificationManager.scheduleDepartureReminder(departure: departure, platform: platformToReport)
         }
 
-        // Per-stop alert as the train passes each calling point. The final
-        // stop is excluded — notifyStopIsNext below owns that moment. The
-        // marker only advances when the alert was actually scheduled (or
-        // needed no alert), so a blocked attempt retries next poll.
-        if nextStopIndex > lastNotifiedNextStop {
-            if backendOwnsAlerts {
-                lastNotifiedNextStop = nextStopIndex
-            } else {
-                let alertable = nextStopIndex < trackedStops.count - 1
-                    && trackedStops.contains(where: { $0.hasDeparted })
-                if !alertable || notificationManager.notifyNextStop(
-                    trackedStops[nextStopIndex].station,
-                    expectedTime: TrainTracker.clockTimeString(for: trackedStops[nextStopIndex]),
+        // Proximity alerts: each stop alerts once, ten minutes before its
+        // arrival — alerting when the train leaves the previous stop is far
+        // too early on a long leg and too late on a short hop. The user's
+        // own stop (last tracked, trimmed to the alighting station) swaps
+        // in the get-ready copy. Set entries advance only when the alert
+        // was actually scheduled, so a blocked attempt retries next poll.
+        if trackedStops.contains(where: { $0.hasDeparted }),
+           nextStopIndex > 0, nextStopIndex < trackedStops.count,
+           nextStopIndex < stopTimes.count,
+           let arrival = stopTimes[nextStopIndex],
+           arrival.timeIntervalSinceNow <= 600 {
+            let stop = trackedStops[nextStopIndex]
+            let key = stop.crs.isEmpty ? "\(nextStopIndex)-\(stop.station)" : stop.crs
+            let isUsersStop = nextStopIndex == trackedStops.count - 1
+            if !alertedProximityStops.contains(key) {
+                if backendOwnsAlerts {
+                    alertedProximityStops.insert(key)
+                    if isUsersStop { notificationManager.markStopIsNextHandled() }
+                } else if isUsersStop {
+                    // Its own one-shot dedupes and retries authorization.
+                    notificationManager.notifyStopIsNext(stop.station)
+                } else if notificationManager.notifyNextStop(
+                    stop.station,
+                    expectedTime: TrainTracker.clockTimeString(for: stop),
                     stopsToGo: trackedStops.count - 1 - nextStopIndex
                 ) {
-                    lastNotifiedNextStop = nextStopIndex
+                    alertedProximityStops.insert(key)
                 }
-            }
-        }
-
-        // The stop the user gets off at is the last tracked stop (trimmed to
-        // the alighting station above). Alert once, as soon as it becomes the
-        // next stop after a confirmed departure.
-        if trackedStops.count > 1,
-           nextStopIndex == trackedStops.count - 1,
-           currentStopIndex == nextStopIndex - 1,
-           trackedStops.contains(where: { $0.hasDeparted }) {
-            if backendOwnsAlerts {
-                notificationManager.markStopIsNextHandled()
-            } else {
-                notificationManager.notifyStopIsNext(trackedStops[nextStopIndex].station)
             }
         }
 

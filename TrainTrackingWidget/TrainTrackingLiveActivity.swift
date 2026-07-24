@@ -7,6 +7,10 @@ struct TrainTrackingLiveActivity: Widget {
         ActivityConfiguration(for: TrainTrackingAttributes.self) { context in
             lockScreenView(context: context)
                 .widgetURL(URL(string: "liverail://journey/\(context.attributes.serviceId)")!)
+                // The app's hero look: bright status-coloured card with dark
+                // ink text, identical in both appearances.
+                .activityBackgroundTint(WidgetTheme.background(for: context.state.status))
+                .activitySystemActionForegroundColor(WidgetTheme.ink)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -16,10 +20,10 @@ struct TrainTrackingLiveActivity: Widget {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(.white.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    statusDot(context.state.status)
+                    islandStatusLabel(context.state.status)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     let atTerminus = context.state.progressFraction >= 1.0
@@ -28,7 +32,7 @@ struct TrainTrackingLiveActivity: Widget {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(context.state.hasDeparted ? "FROM" : "DEPARTING")
                                     .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                                    .tracking(0.8)
+                                    .tracking(1.0)
                                     .foregroundStyle(.secondary)
                                 Text(context.state.currentStopName)
                                     .font(.system(size: 12, weight: .semibold))
@@ -38,7 +42,7 @@ struct TrainTrackingLiveActivity: Widget {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text(atTerminus ? "ARRIVED" : "NEXT")
                                     .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                                    .tracking(0.8)
+                                    .tracking(1.0)
                                     .foregroundStyle(.secondary)
                                 Text(context.state.nextStopName)
                                     .font(.system(size: 12, weight: .semibold))
@@ -46,7 +50,7 @@ struct TrainTrackingLiveActivity: Widget {
                             }
                         }
 
-                        progressBar(for: context.state)
+                        progressBar(for: context.state, tint: islandStatusColor(context.state.status))
 
                         HStack {
                             if atTerminus {
@@ -63,7 +67,7 @@ struct TrainTrackingLiveActivity: Widget {
                             Spacer(minLength: 8)
                             HStack(spacing: 3) {
                                 if let d = context.state.destinationDelayMinutes, d != 0 {
-                                    WidgetDelayChip(minutes: d)
+                                    WidgetDelayChip(minutes: d, onHero: false)
                                 }
                                 if let eta = context.state.destinationArrivalDate {
                                     Text(eta, style: .time)
@@ -81,7 +85,7 @@ struct TrainTrackingLiveActivity: Widget {
             } compactLeading: {
                 Image(systemName: "tram.fill")
                     .font(.system(size: 13))
-                    .foregroundStyle(statusColor(context.state.status))
+                    .foregroundStyle(islandStatusColor(context.state.status))
             } compactTrailing: {
                 if context.state.hasDeparted {
                     compactCountdown(for: context.state)
@@ -92,31 +96,32 @@ struct TrainTrackingLiveActivity: Widget {
             } minimal: {
                 Image(systemName: "tram.fill")
                     .font(.system(size: 12))
-                    .foregroundStyle(statusColor(context.state.status))
+                    .foregroundStyle(islandStatusColor(context.state.status))
             }
         }
     }
+
+    // MARK: - Lock screen
 
     @ViewBuilder
     private func lockScreenView(context: ActivityViewContext<TrainTrackingAttributes>) -> some View {
         let atTerminus = context.state.progressFraction >= 1.0
         VStack(spacing: 12) {
-            HStack {
-                HStack(spacing: 6) {
-                    Text(context.attributes.operatorCode)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .tracking(0.5)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(.white.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                    Text(context.attributes.operatorName)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+            HStack(spacing: 6) {
+                Text(context.attributes.operatorCode)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .tracking(0.5)
+                    .foregroundStyle(WidgetTheme.cream)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(WidgetTheme.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                Text(context.attributes.operatorName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(WidgetTheme.inkSoft)
+                    .lineLimit(1)
                 Spacer()
-                statusBadge(context.state.status)
+                statusPill(context.state.status)
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -138,39 +143,42 @@ struct TrainTrackingLiveActivity: Widget {
                 )
             }
 
-            progressBar(for: context.state)
+            progressBar(for: context.state, tint: WidgetTheme.ink)
 
             sentenceFooter(context: context, atTerminus: atTerminus)
         }
         .padding(16)
+        .foregroundStyle(WidgetTheme.ink)
     }
 
     @ViewBuilder
     private func stopColumn(label: String, name: String, time: String?, platform: String?, delayMinutes: Int?, trailing: Bool) -> some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .tracking(1.0)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(WidgetTheme.inkSoft)
             Text(name)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
+                .tracking(-0.2)
                 .lineLimit(1)
             HStack(spacing: 4) {
                 if let time, !time.isEmpty {
                     Text(time)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .tracking(0.3)
+                        .foregroundStyle(WidgetTheme.inkSoft)
                 }
                 if let d = delayMinutes, d != 0 {
-                    WidgetDelayChip(minutes: d)
+                    WidgetDelayChip(minutes: d, onHero: true)
                 }
                 if let p = platform, !p.isEmpty, p != "—" {
-                    Text("Plat \(p)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                    Text("PLAT \(p)")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .tracking(0.5)
                         .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(.white.opacity(0.1))
+                        .padding(.vertical, 1.5)
+                        .background(WidgetTheme.ink.opacity(0.10))
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }
@@ -180,48 +188,49 @@ struct TrainTrackingLiveActivity: Widget {
 
     @ViewBuilder
     private func sentenceFooter(context: ActivityViewContext<TrainTrackingAttributes>, atTerminus: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if atTerminus {
-                Text("Arrived at \(context.state.nextStopName)")
-                    .font(.system(size: 14, weight: .semibold))
-            } else if !context.state.hasDeparted {
-                Text(context.state.isBoarding
-                    ? "Boarding · departs \(context.attributes.scheduledDeparture)"
-                    : "Departs \(context.attributes.scheduledDeparture)")
-                    .font(.system(size: 14, weight: .semibold))
-            } else if let arrival = context.state.nextStopArrivalDate {
-                let remaining = arrival.timeIntervalSinceNow
-                if remaining < 30 && remaining > -120 {
-                    Text("Approaching \(context.state.nextStopName)")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(statusColor(context.state.status))
-                } else if remaining > 0 {
-                    Text("Arrives at \(context.state.nextStopName) in \(formatRemaining(remaining))")
-                        .font(.system(size: 14, weight: .semibold))
-                } else {
-                    Text("Due now at \(context.state.nextStopName)")
-                        .font(.system(size: 14, weight: .semibold))
+        VStack(alignment: .leading, spacing: 3) {
+            Group {
+                if atTerminus {
+                    Text("Arrived at \(context.state.nextStopName)")
+                } else if !context.state.hasDeparted {
+                    Text(context.state.isBoarding
+                        ? "Boarding · departs \(context.attributes.scheduledDeparture)"
+                        : "Departs \(context.attributes.scheduledDeparture)")
+                } else if let arrival = context.state.nextStopArrivalDate {
+                    let remaining = arrival.timeIntervalSinceNow
+                    if remaining < 30 && remaining > -120 {
+                        Text("Approaching \(context.state.nextStopName)")
+                    } else if remaining > 0 {
+                        Text("Arrives at \(context.state.nextStopName) in \(formatRemaining(remaining))")
+                    } else {
+                        Text("Due now at \(context.state.nextStopName)")
+                    }
                 }
             }
+            .font(.system(size: 14, weight: .semibold))
+            .tracking(-0.1)
 
             if !atTerminus {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     if let d = context.state.destinationDelayMinutes, d > 0 {
-                        Text("+\(d) min late")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.orange)
+                        Text("+\(d) MIN LATE")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .tracking(0.5)
                     }
                     Text("Due \(context.attributes.destination)")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WidgetTheme.inkSoft)
+                        .lineLimit(1)
                     if let eta = context.state.destinationArrivalDate {
                         Text(eta, style: .time)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .tracking(0.3)
+                            .foregroundStyle(WidgetTheme.inkSoft)
                     } else {
                         Text(context.attributes.scheduledArrival)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .tracking(0.3)
+                            .foregroundStyle(WidgetTheme.inkSoft)
                     }
                 }
             }
@@ -229,23 +238,25 @@ struct TrainTrackingLiveActivity: Widget {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: - Shared pieces
+
     @ViewBuilder
-    private func progressBar(for state: TrainTrackingAttributes.ContentState) -> some View {
-        let tint = statusColor(state.status)
-        if let prev = state.previousStopDepartureDate,
-           let next = state.nextStopArrivalDate,
-           prev < next {
-            ProgressView(timerInterval: prev...next, countsDown: false) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
+    private func progressBar(for state: TrainTrackingAttributes.ContentState, tint: Color) -> some View {
+        Group {
+            if let prev = state.previousStopDepartureDate,
+               let next = state.nextStopArrivalDate,
+               prev < next {
+                ProgressView(timerInterval: prev...next, countsDown: false) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.linear)
+            } else {
+                ProgressView(value: max(0, min(state.progressFraction, 1)))
             }
-            .tint(tint)
-            .progressViewStyle(.linear)
-        } else {
-            ProgressView(value: max(0, min(state.progressFraction, 1)))
-                .tint(tint)
         }
+        .tint(tint)
     }
 
     @ViewBuilder
@@ -255,7 +266,7 @@ struct TrainTrackingLiveActivity: Widget {
             if secondsUntil < 30 && secondsUntil > -120 {
                 Text("Approaching")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(statusColor(state.status))
+                    .foregroundStyle(islandStatusColor(state.status))
             } else if secondsUntil > 0 {
                 Text(formatRemaining(secondsUntil))
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -316,26 +327,37 @@ struct TrainTrackingLiveActivity: Widget {
         return "\(hours)h \(mins)m"
     }
 
+    /// Capsule status pill matching the app's StatusPill: lime for on time,
+    /// dark amber pill when delayed, red pill when cancelled.
     @ViewBuilder
-    private func statusBadge(_ status: String) -> some View {
+    private func statusPill(_ status: String) -> some View {
+        let (bg, fg, label): (Color, Color, String) = {
+            switch status {
+            case "cancelled": return (WidgetTheme.cancelledPillBg, WidgetTheme.cancelledPillFg, "Cancelled")
+            case "delayed": return (WidgetTheme.delayedPillBg, WidgetTheme.delayedPillFg, "Delayed")
+            default: return (WidgetTheme.onTimeBg, WidgetTheme.ink, "On time")
+            }
+        }()
         HStack(spacing: 4) {
             Circle()
-                .fill(statusColor(status))
-                .frame(width: 6, height: 6)
-            Text(status == "on-time" ? "On time" : status == "delayed" ? "Delayed" : "Cancelled")
-                .font(.system(size: 11, weight: .semibold))
+                .fill(fg)
+                .frame(width: 5, height: 5)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.2)
         }
+        .foregroundStyle(fg)
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(.ultraThinMaterial)
+        .padding(.vertical, 3.5)
+        .background(bg)
         .clipShape(Capsule())
     }
 
     @ViewBuilder
-    private func statusDot(_ status: String) -> some View {
+    private func islandStatusLabel(_ status: String) -> some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(statusColor(status))
+                .fill(islandStatusColor(status))
                 .frame(width: 6, height: 6)
             Text(status == "on-time" ? "On time" : status == "delayed" ? "Delayed" : "Cancelled")
                 .font(.system(size: 10, weight: .semibold))
@@ -343,29 +365,34 @@ struct TrainTrackingLiveActivity: Widget {
         }
     }
 
-    private func statusColor(_ status: String) -> Color {
+    /// Status colours on the island's black pill — the app accent for on
+    /// time (not system green), dark-surface amber/red otherwise.
+    private func islandStatusColor(_ status: String) -> Color {
         switch status {
-        case "delayed": return .orange
-        case "cancelled": return .red
-        default: return .green
+        case "delayed": return WidgetTheme.islandDelayed
+        case "cancelled": return WidgetTheme.islandCancelled
+        default: return WidgetTheme.accent
         }
     }
 }
 
 private struct WidgetDelayChip: View {
     let minutes: Int
-
-    private var color: Color {
-        minutes > 0 ? .orange : .green
-    }
+    /// On the bright hero card the chip is ink-on-ink-wash (the background
+    /// already carries the status colour); on the island it keeps semantic
+    /// colour against black.
+    let onHero: Bool
 
     var body: some View {
+        let color: Color = onHero
+            ? WidgetTheme.ink
+            : (minutes > 0 ? WidgetTheme.islandDelayed : .green)
         Text(minutes > 0 ? "+\(minutes)" : "\(minutes)")
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
             .foregroundStyle(color)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
-            .background(color.opacity(0.18))
+            .background(color.opacity(onHero ? 0.10 : 0.18))
             .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
