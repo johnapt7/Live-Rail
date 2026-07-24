@@ -56,7 +56,7 @@ struct JourneyScreen: View {
     private var heroBg: Color {
         switch train.status {
         case .cancelled: return Theme.bad
-        case .delayed: return Theme.warn
+        case .delayed: return Theme.heroDelayed
         case .onTime: return accent
         }
     }
@@ -759,9 +759,9 @@ struct JourneyScreen: View {
             )
         )
         .foregroundStyle(Theme.ink)
-        // The hero keeps its bright brand colour in dark mode; forcing light
-        // resolution keeps its ink-on-accent contrast intact.
-        .environment(\.colorScheme, .light)
+        // The hero follows the system scheme: bright brand fills in light
+        // mode, their warm-ladder equivalents (stone / deep amber / dark
+        // red) with cream ink in dark mode.
     }
 
     private var heroTopBar: some View {

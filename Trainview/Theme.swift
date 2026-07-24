@@ -46,6 +46,10 @@ enum Theme {
     static let onTimeBg = Color(hex: 0xC9E265)
     static let warn = Color(hex: 0xF7D06B)
     static let bad = adaptive(0xE8C1B8, 0x6E3A2F)
+    /// Delayed hero fill: bright amber in light mode; a deep warm amber in
+    /// dark mode that keeps cream text above 6:1 (`warn` itself is a
+    /// light-context chip colour and cannot carry cream text).
+    static let heroDelayed = adaptive(0xF7D06B, 0x6B5210)
 
     static let line = adaptive(0x0E2D38, 0xF4EFE3, lightAlpha: 0.12, darkAlpha: 0.18)
     static let lineStrong = adaptive(0x0E2D38, 0xF4EFE3, lightAlpha: 0.22, darkAlpha: 0.34)
