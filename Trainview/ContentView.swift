@@ -81,9 +81,12 @@ struct ContentView: View {
             }
             // Pick tracking back up after a relaunch so a live journey (and
             // its Live Activity) survives force-quits and Xcode reruns.
-            // A notification tap that launched the app routes straight to the
-            // journey; its didReceive ran before this view existed.
-            if NotificationPresenter.shared.consumePendingJourneyOpen() {
+            // A notification tap that launched the app routes straight to its
+            // destination; didReceive ran before this view existed.
+            if let habit = NotificationPresenter.shared.consumePendingHabitOpen() {
+                openHabitBoard(habit)
+                Task { _ = await tracker.resumeIfNeeded() }
+            } else if NotificationPresenter.shared.consumePendingJourneyOpen() {
                 openTrackedJourney()
             } else {
                 Task { _ = await tracker.resumeIfNeeded() }
@@ -114,6 +117,13 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NotificationPresenter.journeyTapNotification)) { _ in
             _ = NotificationPresenter.shared.consumePendingJourneyOpen()
             openTrackedJourney()
+        }
+        // A station-arrival suggestion opens that station's board already
+        // filtered to the user's usual destination.
+        .onReceive(NotificationCenter.default.publisher(for: NotificationPresenter.habitTapNotification)) { _ in
+            if let habit = NotificationPresenter.shared.consumePendingHabitOpen() {
+                openHabitBoard(habit)
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             // Returning to the foreground: refresh immediately instead of
@@ -161,6 +171,15 @@ struct ContentView: View {
                 }
             }
         )
+    }
+
+    private func openHabitBoard(_ habit: NotificationPresenter.HabitOpen) {
+        activeStation = habit.station
+        pendingJourneyFilter = habit.destination
+        boardMode = .departures
+        withAnimation(.easeInOut(duration: 0.25)) {
+            screen = .departures
+        }
     }
 
     private func openBoard(_ station: Station) {

@@ -367,6 +367,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Trainview;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Trainview uses your location to find nearby stations.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Trainview watches for arrivals at stations you travel from often, so your usual train appears automatically when you get there.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -407,6 +408,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Trainview;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Trainview uses your location to find nearby stations.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Trainview watches for arrivals at stations you travel from often, so your usual train appears automatically when you get there.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
