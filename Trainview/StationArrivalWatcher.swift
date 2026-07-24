@@ -9,7 +9,8 @@ import UIKit
 final class StationArrivalWatcher: NSObject, CLLocationManagerDelegate {
     static let shared = StationArrivalWatcher()
 
-    private static let regionPrefix = "habit-"
+    // Read from nonisolated CoreLocation delegate callbacks.
+    private nonisolated static let regionPrefix = "habit-"
     private static let regionRadiusMetres: CLLocationDistance = 500
     /// Lingering near a station (or exit/re-entry on its edge) must not
     /// re-fire; one suggestion per station per window.
