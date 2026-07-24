@@ -91,6 +91,16 @@ final class TrainTracker {
         startLiveActivity(train: train, stops: trackedStops)
         notificationManager.configure(train: train, boardingStation: boardingStation)
         Task { await notificationManager.requestPermissionIfNeeded() }
+        // Tracking is the habit signal: enough tracks of the same journey
+        // from one station and arriving there auto-surfaces the next train.
+        // The personal leg's last stop is where this user gets off.
+        if let leg = trackedStops.last, !leg.crs.isEmpty {
+            JourneyHabitsStore.shared.recordTracking(
+                boarding: boardingStation,
+                destinationCode: leg.crs,
+                destinationName: leg.station
+            )
+        }
         startPolling()
     }
 
@@ -684,9 +694,10 @@ final class TrainTracker {
 
         if boardingHasDeparted {
             if !didNotifyDeparted {
-                if backendOwnsAlerts {
-                    // The backend pushed this alert; the pended "departing
-                    // soon" reminder is now stale and must still be cleared.
+                if backendOwnsAlerts || activity != nil {
+                    // The Live Activity shows the departure — banners are
+                    // reserved for exceptions. The pended "departing soon"
+                    // reminder is now stale and must still be cleared.
                     notificationManager.clearDepartureReminder()
                     didNotifyDeparted = true
                 } else if notificationManager.notifyDeparted(from: boardingStation?.name ?? "the station") {
@@ -701,12 +712,13 @@ final class TrainTracker {
             notificationManager.scheduleDepartureReminder(departure: departure, platform: platformToReport)
         }
 
-        // Proximity alerts: each stop alerts once, ten minutes before its
-        // arrival — alerting when the train leaves the previous stop is far
-        // too early on a long leg and too late on a short hop. The user's
-        // own stop (last tracked, trimmed to the alighting station) swaps
-        // in the get-ready copy. Set entries advance only when the alert
-        // was actually scheduled, so a blocked attempt retries next poll.
+        // Proximity alerts: ten minutes before a stop's arrival — alerting
+        // when the train leaves the previous stop is far too early on a
+        // long leg and too late on a short hop. The user's own stop (last
+        // tracked, trimmed to the alighting station) is the exception that
+        // always banners; intermediate stops banner only when there is no
+        // Live Activity showing them already. Set entries advance only
+        // when handled, so a blocked attempt retries next poll.
         if trackedStops.contains(where: { $0.hasDeparted }),
            nextStopIndex > 0, nextStopIndex < trackedStops.count,
            nextStopIndex < stopTimes.count,
@@ -716,12 +728,16 @@ final class TrainTracker {
             let key = stop.crs.isEmpty ? "\(nextStopIndex)-\(stop.station)" : stop.crs
             let isUsersStop = nextStopIndex == trackedStops.count - 1
             if !alertedProximityStops.contains(key) {
-                if backendOwnsAlerts {
+                if isUsersStop {
+                    if backendOwnsAlerts {
+                        alertedProximityStops.insert(key)
+                        notificationManager.markStopIsNextHandled()
+                    } else {
+                        // Its own one-shot dedupes and retries authorization.
+                        notificationManager.notifyStopIsNext(stop.station)
+                    }
+                } else if backendOwnsAlerts || activity != nil {
                     alertedProximityStops.insert(key)
-                    if isUsersStop { notificationManager.markStopIsNextHandled() }
-                } else if isUsersStop {
-                    // Its own one-shot dedupes and retries authorization.
-                    notificationManager.notifyStopIsNext(stop.station)
                 } else if notificationManager.notifyNextStop(
                     stop.station,
                     expectedTime: TrainTracker.clockTimeString(for: stop),

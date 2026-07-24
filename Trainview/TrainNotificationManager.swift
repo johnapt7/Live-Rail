@@ -68,6 +68,8 @@ final class TrainNotificationManager {
         content.body = body
         content.sound = .default
         content.threadIdentifier = serviceId
+        // Five minutes to boarding is exactly what time-sensitive is for.
+        content.interruptionLevel = .timeSensitive
 
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: ["\(serviceId)-departing-soon"])
@@ -115,10 +117,13 @@ final class TrainNotificationManager {
         } else if stopsToGo > 1 {
             body += " — \(stopsToGo) stops before yours"
         }
+        // Only sent when no Live Activity is showing; routine progress
+        // never needs to pierce Focus.
         scheduleNotification(
             id: "\(serviceId)-next-\(stationName)",
             title: "Next stop",
-            body: body
+            body: body,
+            interruption: .active
         )
         return true
     }
@@ -199,10 +204,12 @@ final class TrainNotificationManager {
            newExp != previous.expectedDeparture,
            isClockTime(newExp),
            newExp != scheduled {
+            // Informative rather than actionable — no need to pierce Focus.
             scheduleNotification(
                 id: "\(serviceId)-delay-\(newExp)",
                 title: "Delay Update",
-                body: "\(trainDescription) is now expected at \(newExp)"
+                body: "\(trainDescription) is now expected at \(newExp)",
+                interruption: .active
             )
         }
     }
@@ -261,12 +268,20 @@ final class TrainNotificationManager {
         }
     }
 
-    private func scheduleNotification(id: String, title: String, body: String) {
+    /// Time-sensitive by default: every immediate alert the app still sends
+    /// is an exception the user must act on (platform change, cancellation,
+    /// your stop next) — routine progress lives in the Live Activity and
+    /// never reaches here while one is showing.
+    private func scheduleNotification(
+        id: String, title: String, body: String,
+        interruption: UNNotificationInterruptionLevel = .timeSensitive
+    ) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
         content.threadIdentifier = serviceId
+        content.interruptionLevel = interruption
 
         let request = UNNotificationRequest(
             identifier: id,
