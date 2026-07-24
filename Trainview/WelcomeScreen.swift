@@ -307,6 +307,8 @@ private struct PermissionRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Pinned leading: rows must share one left edge — without this
+            // the enclosing stack centres each row by its own wrap width.
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 13))
@@ -333,6 +335,7 @@ private struct PermissionRow: View {
                         .foregroundStyle(Theme.inkSoft)
                         .lineSpacing(2)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 14)
 
