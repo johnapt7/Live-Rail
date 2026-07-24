@@ -36,11 +36,11 @@ enum Theme {
     static let inkSoft = adaptive(0x2A4754, 0xD6CFBF)
     static let inkMute = adaptive(0x6E8893, 0xADA492)
 
-    /// Sky-blue teal, a shade darker than the original for better contrast.
-    /// Operator chips render in a single neutral (see OperatorBrand), so the
-    /// accent never competes with brand colours despite being blue.
-    /// Darker teal in dark mode so cream text stays legible on accent chips.
-    static let accent = adaptive(0x5CA3B9, 0x2F7181)
+    /// Sky-blue teal in light mode. Dark mode drops the blue entirely for a
+    /// warm stone that sits in the graphite ladder — the teal was the one
+    /// blue cast in an otherwise warm dark palette. Cream text on the stone
+    /// fill (and stone text on cream fills) clears 4.5:1.
+    static let accent = adaptive(0x5CA3B9, 0x6E6450)
 
     // Chip colours used only inside always-light contexts (StatusPill).
     static let onTimeBg = Color(hex: 0xC9E265)
