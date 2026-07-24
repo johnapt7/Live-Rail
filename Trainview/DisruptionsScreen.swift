@@ -1,14 +1,18 @@
 import SwiftUI
 
-/// Operator status board: every operator with a simple green or red
-/// indicator. Station-specific detail lives on the station screens, so
-/// this tab stays a pure at-a-glance summary.
+/// Network status: what's wrong at YOUR stations first, then every
+/// operator. Disrupted operators expand to say what's actually happening,
+/// with a link to their live travel news.
 struct DisruptionsScreen: View {
     let accent: Color
 
     @State private var indicators: [TOCIndicator] = []
     @State private var indicatorsLoaded = false
     @State private var loadError = false
+    @State private var stationReports: [StationDisruptionsResponse] = []
+    @State private var stationsChecked = false
+    @State private var expandedOperator: String?
+    @State private var expandedDisruption: String?
 
     private var disrupted: [TOCIndicator] {
         indicators.filter { $0.status != "Good service" }
@@ -17,6 +21,8 @@ struct DisruptionsScreen: View {
     private var healthy: [TOCIndicator] {
         indicators.filter { $0.status == "Good service" }
     }
+
+    private var homeStations: [Station] { HomeStationsStore.shared.stations }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +35,9 @@ struct DisruptionsScreen: View {
                         loadingCard
                     } else {
                         summaryHeader
+                        if !homeStations.isEmpty {
+                            yourStationsSection
+                        }
                         operatorList
                     }
                     Color.clear.frame(height: 32)
@@ -96,10 +105,126 @@ struct DisruptionsScreen: View {
         .padding(.top, 8)
     }
 
+    // MARK: - Your stations
+
+    /// Live incident messages for the user's home stations — the part of
+    /// the network they actually stand on. All-clear collapses to one line.
+    @ViewBuilder
+    private var yourStationsSection: some View {
+        let reports = stationReports.filter { !$0.disruptions.isEmpty }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("YOUR STATIONS")
+                .font(.mono(10, weight: .semibold))
+                .tracking(1.4)
+                .foregroundStyle(Theme.inkMute)
+                .padding(.horizontal, 4)
+            if !stationsChecked {
+                HStack(spacing: 10) {
+                    ProgressView().tint(Theme.ink)
+                    Text("Checking \(homeStations.count) station\(homeStations.count == 1 ? "" : "s")…")
+                        .font(.ui(12))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(Theme.card)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            } else if reports.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.perfGood)
+                    Text("No incidents reported at \(homeStations.map(\.name).joined(separator: ", "))")
+                        .font(.ui(12))
+                        .foregroundStyle(Theme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(Theme.card)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            } else {
+                ForEach(reports, id: \.crs) { report in
+                    stationReportCard(report)
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 20)
+    }
+
+    private func stationReportCard(_ report: StationDisruptionsResponse) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                CodeTag(text: report.crs)
+                Text(report.stationName)
+                    .font(.ui(13, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+                Text("\(report.disruptions.count)")
+                    .font(.mono(11, weight: .semibold))
+                    .foregroundStyle(Theme.delayedText)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            ForEach(report.disruptions) { disruption in
+                Divider().overlay(Theme.line)
+                stationDisruptionRow(disruption, stationCode: report.crs)
+            }
+        }
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Theme.warn.opacity(0.5), lineWidth: 1)
+        )
+    }
+
+    private func stationDisruptionRow(_ disruption: StationDisruption, stationCode: String) -> some View {
+        let key = stationCode + disruption.id
+        let expanded = expandedDisruption == key
+        return Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                expandedDisruption = expanded ? nil : key
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(disruption.title)
+                        .font(.ui(12, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.inkMute)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                if expanded {
+                    Text(disruption.description)
+                        .font(.ui(12))
+                        .foregroundStyle(Theme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let advice = disruption.customerAdvice, !advice.isEmpty {
+                        Text(advice)
+                            .font(.ui(12))
+                            .foregroundStyle(Theme.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Operators
 
-    /// Disrupted operators surface first; each row is just identity plus a
-    /// green/red dot — deliberately no expansion or detail.
+    /// Disrupted operators surface first and expand to say what's actually
+    /// happening; healthy rows stay one glanceable line.
     private var operatorList: some View {
         VStack(spacing: 0) {
             ForEach(Array((disrupted + healthy).enumerated()), id: \.element.tocCode) { index, toc in
@@ -117,29 +242,91 @@ struct DisruptionsScreen: View {
         .padding(.top, 20)
     }
 
+    @ViewBuilder
     private func operatorRow(_ toc: TOCIndicator) -> some View {
         let brand = OperatorBrand.brand(for: toc.tocCode)
         let isGood = toc.status == "Good service"
+        let expanded = expandedOperator == toc.tocCode
 
-        return HStack(spacing: 10) {
-            Text(toc.tocCode)
-                .font(.mono(9, weight: .bold))
-                .tracking(0.5)
-                .foregroundStyle(brand.fg)
-                .frame(width: 32, height: 26)
-                .background(brand.bg)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-            Text(toc.tocName)
-                .font(.ui(13, weight: .semibold))
-                .foregroundStyle(Theme.ink)
-                .lineLimit(1)
-            Spacer()
-            Circle()
-                .fill(isGood ? Theme.perfGood : Theme.cancelledText)
-                .frame(width: 10, height: 10)
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                guard !isGood else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    expandedOperator = expanded ? nil : toc.tocCode
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(toc.tocCode)
+                        .font(.mono(9, weight: .bold))
+                        .tracking(0.5)
+                        .foregroundStyle(brand.fg)
+                        .frame(width: 32, height: 26)
+                        .background(brand.bg)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(toc.tocName)
+                            .font(.ui(13, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
+                        if !isGood {
+                            Text(toc.status)
+                                .font(.ui(11))
+                                .foregroundStyle(Theme.delayedText)
+                                .lineLimit(expanded ? nil : 1)
+                        }
+                    }
+                    Spacer()
+                    if !isGood {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.inkMute)
+                            .rotationEffect(.degrees(expanded ? 180 : 0))
+                    }
+                    Circle()
+                        .fill(isGood ? Theme.perfGood : Theme.cancelledText)
+                        .frame(width: 10, height: 10)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !toc.statusDescription.isEmpty {
+                        Text(toc.statusDescription)
+                            .font(.ui(12))
+                            .foregroundStyle(Theme.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let info = toc.additionalInfo, !info.isEmpty {
+                        Text(info)
+                            .font(.ui(12))
+                            .foregroundStyle(Theme.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let urlString = toc.detailURL, let url = URL(string: urlString) {
+                        Link(destination: url) {
+                            HStack(spacing: 5) {
+                                Text("Live travel news")
+                                    .font(.ui(12, weight: .semibold))
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundStyle(Theme.ink)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(accent.opacity(0.35))
+                            .clipShape(Capsule())
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 12)
+                .transition(.opacity)
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
     }
 
     // MARK: - Loading & error
@@ -201,6 +388,33 @@ struct DisruptionsScreen: View {
             indicatorsLoaded = true
         } catch {
             if !indicatorsLoaded { loadError = true }
+        }
+        await loadStationReports()
+    }
+
+    /// One fetch per home station, concurrently; a station whose fetch
+    /// fails simply reports no incidents rather than blocking the screen.
+    private func loadStationReports() async {
+        let stations = homeStations
+        guard !stations.isEmpty else {
+            stationsChecked = true
+            return
+        }
+        var reports: [StationDisruptionsResponse] = []
+        await withTaskGroup(of: StationDisruptionsResponse?.self) { group in
+            for station in stations {
+                group.addTask {
+                    try? await APIClient.shared.getStationDisruptions(crs: station.code)
+                }
+            }
+            for await report in group {
+                if let report { reports.append(report) }
+            }
+        }
+        let order = Dictionary(uniqueKeysWithValues: stations.enumerated().map { ($0.element.code, $0.offset) })
+        withAnimation(.easeOut(duration: 0.2)) {
+            stationReports = reports.sorted { (order[$0.crs] ?? 99) < (order[$1.crs] ?? 99) }
+            stationsChecked = true
         }
     }
 }
