@@ -2,9 +2,11 @@
 
 ## Train symbol
 
-`Trainview-Train-AppIcon.svg` is the current production icon: a symbol-only, front-facing train with perspective rails and a single lime live-service indicator. The bold monochrome geometry takes cues from contemporary infrastructure brands while avoiding Railway's circular train-and-track construction. It contains no letters or app-name text.
+`Trainview-FutureTrain-AppIcon.svg` is the current production icon: a symbol-only high-speed train in profile with a continuous panoramic window ribbon, minimal rail bed and a single lime live-light blade. The mark contains no letters or app-name text.
 
-`Trainview-Train-AppIcon-Dark.svg` provides the matching dark appearance. The production PNG exports are 1024×1024 and contain no alpha channel.
+`Trainview-FutureTrain-AppIcon-Dark.svg` provides the matching dark appearance. The production PNG exports are 1024×1024 and contain no alpha channel.
+
+`Trainview-Train-AppIcon.svg` is the earlier, more literal front-facing train concept.
 
 ## Archived TV route concept
 

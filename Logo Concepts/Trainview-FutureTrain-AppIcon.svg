@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Trainview futuristic train logo</title>
+  <desc id="desc">A streamlined high-speed train in profile with a panoramic window ribbon, lime live-light blade and minimal rail bed.</desc>
+
+  <rect width="1024" height="1024" fill="#F2EFE5"/>
+
+  <g transform="translate(0 -120)">
+  <!-- A minimal rail bed keeps the symbol grounded without turning pictographic. -->
+  <g fill="none" stroke="#10100E" stroke-linecap="round">
+    <path d="M142 782H882" stroke-width="50"/>
+    <path d="M224 866H800" stroke-width="34"/>
+  </g>
+
+  <!-- One low, aerodynamic shell: unmistakably a high-speed train in profile. -->
+  <path
+    fill="#10100E"
+    d="M148 692V448C148 417 173 392 204 392H508C613 392 685 429 758 502L860 604C896 640 870 701 819 701H148Z"
+  />
+
+  <!-- A continuous panoramic window ribbon becomes the signature shape. -->
+  <path
+    fill="#F2EFE5"
+    d="M220 472H500C568 472 618 492 667 537L756 619H220Z"
+  />
+  <path d="M344 472V619M474 472V619" stroke="#10100E" stroke-width="24"/>
+
+  <!-- Trainview's live-service signal is a single precise speed blade. -->
+  <rect x="220" y="650" width="474" height="24" rx="12" fill="#C9E265"/>
+  </g>
+</svg>
