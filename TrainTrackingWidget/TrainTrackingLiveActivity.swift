@@ -232,6 +232,13 @@ struct TrainTrackingLiveActivity: Widget {
                             .tracking(0.3)
                             .foregroundStyle(WidgetTheme.inkSoft)
                     }
+                    Spacer(minLength: 8)
+                    // Self-updating freshness: stale data announces itself
+                    // instead of masquerading as live.
+                    (Text("Updated ") + Text(context.state.lastUpdated, style: .relative) + Text(" ago"))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(WidgetTheme.inkSoft.opacity(0.8))
+                        .lineLimit(1)
                 }
             }
         }
@@ -335,7 +342,7 @@ struct TrainTrackingLiveActivity: Widget {
             switch status {
             case "cancelled": return (WidgetTheme.cancelledPillBg, WidgetTheme.cancelledPillFg, "Cancelled")
             case "delayed": return (WidgetTheme.delayedPillBg, WidgetTheme.delayedPillFg, "Delayed")
-            default: return (WidgetTheme.onTimeBg, WidgetTheme.ink, "On time")
+            default: return (WidgetTheme.onTimeBg, WidgetTheme.onTimeFg, "On time")
             }
         }()
         HStack(spacing: 4) {
@@ -366,12 +373,13 @@ struct TrainTrackingLiveActivity: Widget {
     }
 
     /// Status colours on the island's black pill — the app accent for on
-    /// time (not system green), dark-surface amber/red otherwise.
+    /// time (not system green), dark-surface amber/red otherwise. Fixed:
+    /// the island never changes appearance with the system scheme.
     private func islandStatusColor(_ status: String) -> Color {
         switch status {
         case "delayed": return WidgetTheme.islandDelayed
         case "cancelled": return WidgetTheme.islandCancelled
-        default: return WidgetTheme.accent
+        default: return WidgetTheme.islandAccent
         }
     }
 }
