@@ -2,9 +2,9 @@
 
 ## Train symbol
 
-`Trainview-FutureTrain-AppIcon.svg` is the current production icon: a symbol-only high-speed train in profile with a continuous panoramic window ribbon, minimal rail bed and a single lime live-light blade. The mark contains no letters or app-name text.
+`Trainview-FutureTrain-AppIcon.svg` is the current production icon: a symbol-only high-speed train in profile with a continuous panoramic window ribbon, minimal rail bed and one accent blade. It uses the app's exact cream, ink and teal theme colours and contains no letters or app-name text.
 
-`Trainview-FutureTrain-AppIcon-Dark.svg` provides the matching dark appearance. The production PNG exports are 1024×1024 and contain no alpha channel.
+`Trainview-FutureTrain-AppIcon-Dark.svg` provides the matching warm graphite, ivory and stone appearance from the app's dark theme. The production PNG exports are 1024×1024 and contain no alpha channel.
 
 `Trainview-Train-AppIcon.svg` is the earlier, more literal front-facing train concept.
 

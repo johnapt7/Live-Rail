@@ -2,25 +2,25 @@
   <title id="title">Trainview futuristic train logo, dark appearance</title>
   <desc id="desc">A streamlined high-speed train in profile with a panoramic window ribbon, lime live-light blade and minimal rail bed.</desc>
 
-  <rect width="1024" height="1024" fill="#090A0A"/>
+  <rect width="1024" height="1024" fill="#100E0A"/>
 
   <g transform="translate(0 -120)">
-  <g fill="none" stroke="#F4F1E8" stroke-linecap="round">
+  <g fill="none" stroke="#F4EFE3" stroke-linecap="round">
     <path d="M142 782H882" stroke-width="50"/>
     <path d="M224 866H800" stroke-width="34"/>
   </g>
 
   <path
-    fill="#F4F1E8"
+    fill="#F4EFE3"
     d="M148 692V448C148 417 173 392 204 392H508C613 392 685 429 758 502L860 604C896 640 870 701 819 701H148Z"
   />
 
   <path
-    fill="#090A0A"
+    fill="#100E0A"
     d="M220 472H500C568 472 618 492 667 537L756 619H220Z"
   />
-  <path d="M344 472V619M474 472V619" stroke="#F4F1E8" stroke-width="24"/>
+  <path d="M344 472V619M474 472V619" stroke="#F4EFE3" stroke-width="24"/>
 
-  <rect x="220" y="650" width="474" height="24" rx="12" fill="#C9E265"/>
+  <rect x="220" y="650" width="474" height="24" rx="12" fill="#6E6450"/>
   </g>
 </svg>
