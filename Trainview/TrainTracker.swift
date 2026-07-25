@@ -51,10 +51,21 @@ final class TrainTracker {
     /// because LDBWS splits calling points around the queried station.
     var lastDetails: ServiceDetailsResponse?
     var lastDetailsCRS: String?
+    /// Non-nil while the journey-complete banner shows: the destination has
+    /// been reached, polling has stopped, and tracking clears itself after a
+    /// short grace period (or when the user taps Done).
+    var arrivalSummary: ArrivalSummary?
+    var journeyCompleted: Bool { arrivalSummary != nil }
+
+    struct ArrivalSummary {
+        let station: String
+        let time: String
+    }
 
     private var stopTimes: [Date?] = []
     private var alightingCRS: String?
     private var pollingTask: Task<Void, Never>?
+    private var completionDismissTask: Task<Void, Never>?
     private var activity: Activity<TrainTrackingAttributes>?
     private var pushTokenTask: Task<Void, Never>?
     private var registeredPushToken: String?
@@ -81,6 +92,7 @@ final class TrainTracker {
     private static let snapshotKey = "trackingSnapshot"
 
     func startTracking(train: Train, stops: [Stop], boardingStation: Station, alightingCRS: String? = nil, boardStation: Station? = nil) {
+        clearCompletionState()
         trackedTrain = train
         self.alightingCRS = alightingCRS
         trackedStops = personalStops(stops)
@@ -111,17 +123,11 @@ final class TrainTracker {
     }
 
     func stopTracking() {
+        clearCompletionState()
         isTracking = false
         pollingTask?.cancel()
         pollingTask = nil
-        pushTokenTask?.cancel()
-        pushTokenTask = nil
-        if let token = registeredPushToken {
-            registeredPushToken = nil
-            // Best-effort: the server also ends registrations on its own
-            // arrival evidence, so a lost unregister is not fatal.
-            Task { try? await APIClient.shared.unregisterLiveActivity(token: token) }
-        }
+        unregisterBackendPush()
         trackedTrain = nil
         trackedStops = []
         boardingStation = nil
@@ -220,7 +226,7 @@ final class TrainTracker {
     /// Immediate refresh for foreground return, so the screen and Live
     /// Activity catch up without waiting out the poll loop's sleep.
     func pollNow() {
-        guard isTracking else { return }
+        guard isTracking, !journeyCompleted else { return }
         Task {
             // The user may have flipped notification permission in Settings
             // while we were backgrounded — re-read it before evaluating.
@@ -769,7 +775,7 @@ final class TrainTracker {
         // A 30-minute grace past the last known arrival time is the safety
         // net so tracking can't run forever if evidence never arrives.
         if destinationArrived() {
-            stopTracking()
+            completeJourney()
         }
     }
 
@@ -779,10 +785,79 @@ final class TrainTracker {
         if !last.crs.isEmpty && movements.contains(where: { $0.crs == last.crs && $0.eventType == "ARRIVAL" }) {
             return true
         }
-        if let arrival = stopTimes.last ?? nil, Date().timeIntervalSince(arrival) > 30 * 60 {
+        if let arrival = stopTimes.last ?? nil, Date().timeIntervalSince(arrival) > 30 * 60, onFinalLeg() {
             return true
         }
         return false
+    }
+
+    /// Mirrors the server's rule: the 30-minute staleness timeout may only
+    /// end a journey that demonstrably reached its final leg — otherwise a
+    /// severely delayed train would stop its own tracking mid-route.
+    private func onFinalLeg() -> Bool {
+        guard trackedStops.count > 1 else { return false }
+        let penultimate = trackedStops[trackedStops.count - 2]
+        if penultimate.hasDeparted { return true }
+        return !penultimate.crs.isEmpty
+            && movements.contains { $0.crs == penultimate.crs && $0.eventType == "DEPARTURE" }
+    }
+
+    // MARK: - Journey completion
+
+    /// Graceful journey end: freeze the display at "arrived", confirm to the
+    /// user that tracking is over, end the Live Activity, and only clear the
+    /// tracking state after a grace period (or when the user taps Done).
+    @MainActor
+    private func completeJourney() {
+        guard arrivalSummary == nil else { return }
+        guard let destination = trackedStops.last else {
+            stopTracking()
+            return
+        }
+
+        // Freeze the strip on its terminal state.
+        currentStopIndex = max(trackedStops.count - 1, 0)
+        nextStopIndex = currentStopIndex
+        progressBetweenStops = 1
+        overallProgress = 1
+        arrivalSummary = ArrivalSummary(
+            station: destination.station,
+            time: TrainTracker.clockTimeString(for: destination)
+        )
+
+        pollingTask?.cancel()
+        pollingTask = nil
+        notificationManager.notifyArrived(at: destination.station)
+        endLiveActivity(arrived: true)
+        unregisterBackendPush()
+
+        completionDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(180))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.stopTracking() }
+        }
+    }
+
+    /// The Done button on the journey-complete banner.
+    func acknowledgeArrival() {
+        stopTracking()
+    }
+
+    private func clearCompletionState() {
+        completionDismissTask?.cancel()
+        completionDismissTask = nil
+        arrivalSummary = nil
+    }
+
+    private func unregisterBackendPush() {
+        pushTokenTask?.cancel()
+        pushTokenTask = nil
+        if let token = registeredPushToken {
+            registeredPushToken = nil
+            // Best-effort: the server also ends registrations on its own
+            // arrival evidence, so a lost unregister is not fatal.
+            Task { try? await APIClient.shared.unregisterLiveActivity(token: token) }
+        }
     }
 
     // MARK: - Live Activity
@@ -858,11 +933,17 @@ final class TrainTracker {
         }
     }
 
-    private func endLiveActivity() {
+    private func endLiveActivity(arrived: Bool = false) {
         guard let activity else { return }
         let state = makeContentState()
+        // An arrived journey keeps its final state on the lock screen for a
+        // few minutes as the closing confirmation; a manual stop clears on
+        // the system default instead.
+        let dismissal: ActivityUIDismissalPolicy = arrived
+            ? .after(Date().addingTimeInterval(10 * 60))
+            : .default
         Task {
-            await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .default)
+            await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: dismissal)
         }
         self.activity = nil
     }

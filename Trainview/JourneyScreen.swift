@@ -923,19 +923,25 @@ struct JourneyScreen: View {
         if !isLoading, loadError == nil, train.status != .cancelled {
             Button {
                 if isTrackingThis {
-                    tracker.stopTracking()
+                    if tracker.journeyCompleted {
+                        tracker.acknowledgeArrival()
+                    } else {
+                        tracker.stopTracking()
+                    }
                 } else {
                     showTrackingSheet = true
                 }
             } label: {
                 HStack(spacing: 8) {
                     if isTrackingThis {
-                        Image(systemName: "stop.fill")
+                        Image(systemName: tracker.journeyCompleted ? "checkmark" : "stop.fill")
                             .font(.system(size: 11, weight: .bold))
                     } else {
                         LiveDotColored(color: accent)
                     }
-                    Text(isTrackingThis ? "Stop tracking" : "Track this train")
+                    Text(isTrackingThis
+                        ? (tracker.journeyCompleted ? "Done — journey complete" : "Stop tracking")
+                        : "Track this train")
                         .font(.ui(15, weight: .semibold))
                 }
                 .foregroundStyle(isTrackingThis ? Theme.ink : accent)
@@ -1734,7 +1740,11 @@ private struct LiveTrackingStrip: View {
     }
 
     private var lastDeparted: Stop? {
-        let idx = tracker.currentStopIndex
+        // Once complete, both indices sit on the destination — the left
+        // column then shows the stop before it, not the destination twice.
+        let idx = tracker.journeyCompleted
+            ? tracker.trackedStops.count - 2
+            : tracker.currentStopIndex
         guard idx >= 0, idx < tracker.trackedStops.count else { return nil }
         return tracker.trackedStops[idx]
     }
@@ -1786,11 +1796,13 @@ private struct LiveTrackingStrip: View {
                     .frame(width: 7, height: 7)
             }
             HStack(spacing: 6) {
-                Text("TRACKING LIVE")
+                Text(tracker.journeyCompleted ? "JOURNEY COMPLETE" : "TRACKING LIVE")
                     .font(.mono(10, weight: .semibold))
                     .tracking(1.4)
                     .foregroundStyle(Theme.ink)
-                freshnessLabel
+                if !tracker.journeyCompleted {
+                    freshnessLabel
+                }
             }
             if let brand = operatorBrand, let code = tracker.trackedTrain?.operatorCode {
                 Text(code)
@@ -1804,11 +1816,16 @@ private struct LiveTrackingStrip: View {
             }
             Spacer()
             Button {
-                tracker.stopTracking()
+                if tracker.journeyCompleted {
+                    tracker.acknowledgeArrival()
+                } else {
+                    tracker.stopTracking()
+                }
             } label: {
                 // Same label everywhere: stopping lives here and in the
                 // bottom bar, nowhere else, always called the same thing.
-                Text("Stop tracking")
+                // Once arrived, both become the completion acknowledgment.
+                Text(tracker.journeyCompleted ? "Done" : "Stop tracking")
                     .font(.ui(11, weight: .semibold))
                     .foregroundStyle(Theme.inkSoft)
                     .padding(.horizontal, 10)

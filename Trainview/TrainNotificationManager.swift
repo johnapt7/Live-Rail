@@ -36,6 +36,18 @@ final class TrainNotificationManager {
         )
     }
 
+    /// Journey-complete confirmation: tells the user the destination was
+    /// reached and live tracking has ended. Fired by the tracker exactly once
+    /// per journey, from completeJourney.
+    func notifyArrived(at stationName: String) {
+        guard isAuthorized else { return }
+        scheduleNotification(
+            id: "\(serviceId)-arrived",
+            title: "Journey complete",
+            body: "Arrived at \(stationName) — live tracking has ended."
+        )
+    }
+
     /// Pre-departure reminder, pended with the system so it fires even if the
     /// app is suspended by then. Re-scheduled whenever the expected departure
     /// or platform changes; the key guard avoids churning identical requests.

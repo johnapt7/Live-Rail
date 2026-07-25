@@ -641,7 +641,11 @@ struct HomeScreen: View {
 
     private func trackedSubtitle(for train: Train) -> String {
         let base: String
-        if tracker.isBoarding {
+        if let summary = tracker.arrivalSummary {
+            base = summary.time.isEmpty
+                ? "Arrived at \(summary.station)"
+                : "Arrived at \(summary.station) · \(summary.time)"
+        } else if tracker.isBoarding {
             base = "Boarding · departs \(train.time)"
         } else if !tracker.nextStopName.isEmpty {
             base = tracker.nextStopExpectedTime.isEmpty
