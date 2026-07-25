@@ -43,10 +43,12 @@ struct DisruptionsScreen: View {
                     Color.clear.frame(height: 32)
                 }
             }
+            // Attached to the ScrollView itself — on the outer VStack the
+            // pull-to-refresh control never appears.
+            .refreshable { await load() }
         }
         .background(Theme.cream)
         .task { await load() }
-        .refreshable { await load() }
     }
 
     // MARK: - Chrome

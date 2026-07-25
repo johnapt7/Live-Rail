@@ -133,6 +133,9 @@ struct HomeScreen: View {
         .sheet(isPresented: $showDisruptions) {
             DisruptionsScreen(accent: accent)
                 .presentationDetents([.large])
+                // Full-height sheet with no grabber reads as a pushed
+                // screen — show the pull-down affordance explicitly.
+                .presentationDragIndicator(.visible)
         }
         .onChange(of: scenePhase) { _, phase in
             // Refetch the pinned boards whenever the app comes back.
