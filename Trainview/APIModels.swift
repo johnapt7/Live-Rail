@@ -262,6 +262,11 @@ struct StationDisruptionsResponse: Codable {
     let crs: String
     let stationName: String
     let disruptions: [StationDisruption]
+    /// True when the server narrowed the list to operators serving this
+    /// station; false means the station's board was empty (e.g. overnight)
+    /// and these are unfiltered network-wide alerts. Optional so older
+    /// server responses decode.
+    let scoped: Bool?
 }
 
 struct StationDisruption: Codable, Identifiable {

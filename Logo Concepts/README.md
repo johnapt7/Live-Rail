@@ -6,6 +6,8 @@
 
 `Trainview-FutureTrain-AppIcon-Dark.svg` provides the matching warm graphite, ivory and stone appearance from the app's dark theme. The production PNG exports are 1024×1024 and contain no alpha channel.
 
+`Trainview-CabView-AppIcon.svg` is the archived driver's-cab-view concept.
+
 `Trainview-Train-AppIcon.svg` is the earlier, more literal front-facing train concept.
 
 ## Archived TV route concept

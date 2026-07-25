@@ -11,6 +11,7 @@ struct DisruptionsScreen: View {
     @State private var loadError = false
     @State private var stationReports: [StationDisruptionsResponse] = []
     @State private var stationsChecked = false
+    @State private var stationsLoadFailed = false
     @State private var expandedOperator: String?
     @State private var expandedDisruption: String?
 
@@ -131,6 +132,21 @@ struct DisruptionsScreen: View {
                 .padding(14)
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
+            } else if reports.isEmpty && stationsLoadFailed {
+                // A failed check must not masquerade as the all-clear.
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.delayedText)
+                    Text("Couldn't check your stations — pull down to retry")
+                        .font(.ui(12))
+                        .foregroundStyle(Theme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(Theme.card)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
             } else if reports.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
@@ -156,16 +172,28 @@ struct DisruptionsScreen: View {
     }
 
     private func stationReportCard(_ report: StationDisruptionsResponse) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                CodeTag(text: report.crs)
-                Text(report.stationName)
-                    .font(.ui(13, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                Spacer()
-                Text("\(report.disruptions.count)")
-                    .font(.mono(11, weight: .semibold))
-                    .foregroundStyle(Theme.delayedText)
+        // An unscoped report is the server's network-wide fallback (the
+        // station's board was empty, e.g. overnight) — present it as such
+        // rather than pinning national incidents on the station.
+        let scoped = report.scoped ?? true
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    CodeTag(text: report.crs)
+                    Text(report.stationName)
+                        .font(.ui(13, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                    Spacer()
+                    Text("\(report.disruptions.count)")
+                        .font(.mono(11, weight: .semibold))
+                        .foregroundStyle(scoped ? Theme.delayedText : Theme.inkMute)
+                }
+                if !scoped {
+                    Text("No trains due right now — showing network-wide alerts, which may not affect \(report.stationName)")
+                        .font(.ui(11))
+                        .foregroundStyle(Theme.inkMute)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
@@ -178,7 +206,7 @@ struct DisruptionsScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Theme.warn.opacity(0.5), lineWidth: 1)
+                .strokeBorder(scoped ? Theme.warn.opacity(0.5) : Theme.lineStrong, lineWidth: 1)
         )
     }
 
@@ -410,6 +438,7 @@ struct DisruptionsScreen: View {
             return
         }
         var reports: [StationDisruptionsResponse] = []
+        var succeeded = 0
         await withTaskGroup(of: StationDisruptionsResponse?.self) { group in
             for station in stations {
                 group.addTask {
@@ -417,13 +446,17 @@ struct DisruptionsScreen: View {
                 }
             }
             for await report in group {
-                if let report { reports.append(report) }
+                if let report {
+                    succeeded += 1
+                    reports.append(report)
+                }
             }
         }
         let order = Dictionary(uniqueKeysWithValues: stations.enumerated().map { ($0.element.code, $0.offset) })
         withAnimation(.easeOut(duration: 0.2)) {
             stationReports = reports.sorted { (order[$0.crs] ?? 99) < (order[$1.crs] ?? 99) }
             stationsChecked = true
+            stationsLoadFailed = succeeded == 0
         }
     }
 }
