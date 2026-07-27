@@ -573,7 +573,8 @@ final class TrainTracker {
         guard let train = trackedTrain else { return }
         guard let details = try? await APIClient.shared.getServiceDetails(
             serviceId: train.serviceId,
-            crs: (boardStation ?? boardingStation)?.code
+            crs: (boardStation ?? boardingStation)?.code,
+            rid: train.rid
         ) else { return }
         lastDetails = details
         lastDetailsCRS = (boardStation ?? boardingStation)?.code

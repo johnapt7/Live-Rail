@@ -175,13 +175,19 @@ final class APIClient {
 
     // MARK: - Service Details
 
-    func getServiceDetails(serviceId: String, crs: String? = nil) async throws -> ServiceDetailsResponse {
+    func getServiceDetails(serviceId: String, crs: String? = nil, rid: String? = nil) async throws -> ServiceDetailsResponse {
         let encoded = serviceId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? serviceId
-        var queryItems: [URLQueryItem]? = nil
+        var queryItems: [URLQueryItem] = []
         if let crs {
-            queryItems = [URLQueryItem(name: "crs", value: crs)]
+            queryItems.append(URLQueryItem(name: "crs", value: crs))
         }
-        return try await request("/service/\(encoded)", queryItems: queryItems)
+        // Passing the known Darwin RID lets the server skip its fragile
+        // schedule-key identity bridge, so the live-times overlay always
+        // runs for tracked journeys.
+        if let rid, !rid.isEmpty {
+            queryItems.append(URLQueryItem(name: "rid", value: rid))
+        }
+        return try await request("/service/\(encoded)", queryItems: queryItems.isEmpty ? nil : queryItems)
     }
 
     // MARK: - Formation, Loading & Associations

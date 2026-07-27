@@ -387,7 +387,8 @@ struct JourneyScreen: View {
         do {
             let response = try await APIClient.shared.getServiceDetails(
                 serviceId: train.serviceId,
-                crs: boardingStation.code
+                crs: boardingStation.code,
+                rid: train.rid
             )
             apply(response)
         } catch {
