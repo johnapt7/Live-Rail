@@ -11,6 +11,7 @@ struct JourneyMapSection: View {
 
     @State private var showFullMap = false
     @State private var split: RouteSplit?
+    @State private var liveMarker: TrainMapPosition?
 
     private var hasEnoughPins: Bool { stationPins.count >= 2 }
 
@@ -92,6 +93,7 @@ struct JourneyMapSection: View {
                 RouteMapContent(
                     stationPins: stationPins,
                     split: split,
+                    liveMarker: liveMarker,
                     accent: accent,
                     labelAll: false,
                     isDelayed: isDelayed
@@ -101,17 +103,23 @@ struct JourneyMapSection: View {
         .mapStyle(.standard(emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false))
         .mapControlVisibility(.hidden)
         .allowsHitTesting(false)
-        // Recompute the split every second and animate into it, so the train
-        // marker glides continuously instead of stepping between refreshes.
+        // MapKit does not animate annotation coordinates, so a 1-second
+        // update reads as a visible hop however it's animated. Instead the
+        // marker moves every 100ms — a metre or two per step, which the eye
+        // reads as one continuous motion — while the route polylines only
+        // rebuild once a second (re-tessellating them faster buys nothing).
         .task(id: "\(isTrackingThis)-\(stationPins.count)-\(legPaths.count)") {
+            var tick = 0
             while !Task.isCancelled {
                 let next = TrainMapMath.split(
                     pins: stationPins, legPaths: legPaths,
                     tracker: tracker, serviceId: serviceId, date: .now
                 )
-                withAnimation(.linear(duration: 1)) { split = next }
+                liveMarker = next.marker
+                if tick % 10 == 0 { split = next }
+                tick += 1
                 guard isTrackingThis else { break }
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .milliseconds(100))
             }
         }
         .overlay(alignment: .topLeading) {
@@ -385,6 +393,10 @@ enum TrainMapMath {
 struct RouteMapContent: MapContent {
     let stationPins: [StationPin]
     let split: RouteSplit
+    /// Fine-cadence position for the train annotation, updated many times a
+    /// second; falls back to the split's own marker. Kept separate so the
+    /// marker can glide without rebuilding the polylines every step.
+    var liveMarker: TrainMapPosition? = nil
     let accent: Color
     let labelAll: Bool
     /// When the tracked train is running late its travelled line turns
@@ -418,7 +430,7 @@ struct RouteMapContent: MapContent {
             }
         }
 
-        if let marker = split.marker {
+        if let marker = liveMarker ?? split.marker {
             Annotation("", coordinate: marker.coordinate, anchor: .center) {
                 TrainMarker(accent: accent)
             }
@@ -478,6 +490,7 @@ struct RouteMapFullScreen: View {
     @State private var followTrain = false
     @State private var lastPosition: TrainMapPosition?
     @State private var split: RouteSplit?
+    @State private var liveMarker: TrainMapPosition?
 
     private var isTrackingThis: Bool { tracker.isTrackingService(serviceId) }
     private var isDelayed: Bool { isTrackingThis && tracker.trainStatus == .delayed }
@@ -500,6 +513,7 @@ struct RouteMapFullScreen: View {
                     RouteMapContent(
                         stationPins: stationPins,
                         split: split,
+                        liveMarker: liveMarker,
                         accent: accent,
                         labelAll: true,
                         isDelayed: isDelayed
@@ -516,26 +530,34 @@ struct RouteMapFullScreen: View {
                 .padding(.bottom, 24)
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll, showsTraffic: false))
-            // Marker and follow-camera share one 1-second linear animation
-            // cadence, so the train and the viewport glide together.
+            // The marker moves every 100ms for continuous motion (MapKit
+            // doesn't animate annotation coordinates, so coarse steps read
+            // as hops). Polylines and the follow-camera stay on a 1-second
+            // cadence: the camera's linear glide tracks the marker closely
+            // enough, and retargeting it every step would fight user pans.
             .task(id: "\(isTrackingThis)-\(stationPins.count)-\(legPaths.count)") {
+                var tick = 0
                 while !Task.isCancelled {
                     let next = TrainMapMath.split(
                         pins: stationPins, legPaths: legPaths,
                         tracker: tracker, serviceId: serviceId, date: .now
                     )
-                    withAnimation(.linear(duration: 1)) { split = next }
+                    liveMarker = next.marker
                     lastPosition = next.marker
-                    if followTrain, let marker = next.marker {
-                        withAnimation(.linear(duration: 1)) {
-                            camera = .camera(MapCamera(
-                                centerCoordinate: marker.coordinate,
-                                distance: Self.followDistance
-                            ))
+                    if tick % 10 == 0 {
+                        split = next
+                        if followTrain, let marker = next.marker {
+                            withAnimation(.linear(duration: 1)) {
+                                camera = .camera(MapCamera(
+                                    centerCoordinate: marker.coordinate,
+                                    distance: Self.followDistance
+                                ))
+                            }
                         }
                     }
+                    tick += 1
                     guard isTrackingThis else { break }
-                    try? await Task.sleep(for: .seconds(1))
+                    try? await Task.sleep(for: .milliseconds(100))
                 }
             }
             .onMapCameraChange(frequency: .onEnd) { ctx in
