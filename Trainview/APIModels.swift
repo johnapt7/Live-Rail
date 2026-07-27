@@ -111,8 +111,12 @@ struct ServiceDetailsResponse: Codable {
     let predictedPlatform: PredictedPlatform?
     let scheduledDeparture: String?
     let expectedDeparture: String?
+    /// Actual times at the queried board station (LDBWS atd/ata plus the
+    /// server's Darwin overlay). Mutually exclusive with expected times.
+    let actualDeparture: String?
     let scheduledArrival: String?
     let expectedArrival: String?
+    let actualArrival: String?
     let length: Int?
     let origin: StationLocation?
     let destination: StationLocation?

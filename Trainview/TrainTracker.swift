@@ -351,16 +351,17 @@ final class TrainTracker {
         }
 
         if lastPassedIndex < 0 {
-            let hasConfirmedDeparture = trackedStops.contains { $0.hasDeparted }
-            if hasConfirmedDeparture {
-                for (i, time) in stopTimes.enumerated() {
-                    guard let t = time else { continue }
-                    // A stop's single time marks arrival; without feed
-                    // evidence, only count it departed once the dwell has
-                    // also elapsed, so the icon pauses at the platform.
-                    let dwell = Self.dwellSeconds(legInterval: legInterval(after: i))
-                    if now >= t.addingTimeInterval(dwell) { lastPassedIndex = i }
-                }
+            // Only ACTUAL evidence may mark a stop passed: LDBWS actual
+            // times (hasDeparted) here, TRUST events above. The clock alone
+            // never advances the train — expected times are forecasts, and
+            // marking a stop passed the moment its minute elapsed ran the
+            // display 2-3 minutes ahead of reality (the National Rail site
+            // avoids exactly this by only advancing on actuals). A stop
+            // whose time has elapsed unconfirmed shows the train
+            // APPROACHING it: the progress maths below clamps at 1, holding
+            // the icon just short of the platform until evidence lands.
+            for (i, stop) in trackedStops.enumerated() where stop.hasDeparted {
+                lastPassedIndex = i
             }
         }
 
@@ -405,6 +406,11 @@ final class TrainTracker {
     }
 
     static func clockTimeString(for stop: Stop) -> String {
+        // Actual beats estimate beats schedule — show what happened when
+        // it's known, not what was promised.
+        if let act = stop.actualTime, isClockTime(act) {
+            return act
+        }
         if let exp = stop.expectedTime, isClockTime(exp) {
             return exp
         }
@@ -601,16 +607,22 @@ final class TrainTracker {
             let boardExpected = isTerminus
                 ? details.expectedArrival
                 : details.expectedDeparture
-            let boardDeparted = !isTerminus && TrainTracker.boardingDeparted(
+            let boardActual = isTerminus
+                ? details.actualArrival
+                : details.actualDeparture
+            // An actual departure IS departure evidence — no need to wait
+            // for TRUST to corroborate what LDBWS already confirmed.
+            let boardDeparted = !isTerminus && (boardActual != nil || TrainTracker.boardingDeparted(
                 details: details,
                 movements: movements,
                 boardingCRS: board.code
-            )
+            ))
             updatedStops.append(Stop(
                 station: board.name,
                 crs: board.code,
                 time: boardTime,
                 expectedTime: boardExpected,
+                actualTime: boardActual,
                 platform: details.platform ?? train.platform,
                 type: .stop,
                 hasDeparted: boardDeparted

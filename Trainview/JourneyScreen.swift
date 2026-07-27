@@ -459,16 +459,22 @@ struct JourneyScreen: View {
         let boardingExpected = boardingIsTerminal
             ? response.expectedArrival
             : response.expectedDeparture
-        let boardingDeparted = !boardingIsTerminal && TrainTracker.boardingDeparted(
+        let boardingActual = boardingIsTerminal
+            ? response.actualArrival
+            : response.actualDeparture
+        // An actual departure IS departure evidence — no need to wait for
+        // TRUST to corroborate what LDBWS already confirmed.
+        let boardingDeparted = !boardingIsTerminal && (boardingActual != nil || TrainTracker.boardingDeparted(
             details: response,
             movements: movements,
             boardingCRS: boardingStation.code
-        )
+        ))
         allStops.append(Stop(
             station: boardingStation.name,
             crs: boardingStation.code,
             time: boardingTime,
             expectedTime: boardingExpected,
+            actualTime: boardingActual,
             platform: response.platform ?? train.platform,
             type: .stop,
             hasDeparted: boardingDeparted
@@ -962,16 +968,49 @@ struct JourneyScreen: View {
         }
     }
 
+    /// The boarding stop backing the hero's departure time; nil on arrivals
+    /// (whose left column is the origin, not the user's boarding point).
+    private var heroBoardingStop: Stop? {
+        guard !train.isArrival, stops.indices.contains(boardingIndex) else { return nil }
+        return stops[boardingIndex]
+    }
+
+    /// Departure time in the hero. Once the train has actually left, lead
+    /// with the real departure — amber when late, schedule struck through —
+    /// so a late start is legible at a glance.
+    @ViewBuilder
+    private var heroDepartureTime: some View {
+        if let stop = heroBoardingStop,
+           let actual = stop.actualTime, TrainTracker.isClockTime(actual), actual != stop.time {
+            HStack(spacing: 6) {
+                Text(actual)
+                    .font(.mono(14, weight: .semibold))
+                    .tracking(0.3)
+                    .foregroundStyle((stop.delayMinutes ?? 0) > 0 ? Theme.delayedText : Theme.inkSoft)
+                Text(stop.time)
+                    .font(.mono(12))
+                    .tracking(0.3)
+                    .foregroundStyle(Theme.inkSoft.opacity(0.7))
+                    .strikethrough(color: Theme.inkSoft.opacity(0.7))
+                if let delay = stop.delayMinutes, delay != 0 {
+                    DelayChip(minutes: delay)
+                }
+            }
+        } else {
+            // Arrivals: the left side is the ORIGIN, so it gets the
+            // origin's departure time; train.time is the arrival at the
+            // destination and moves to the right column.
+            Text(train.isArrival ? (stops.first?.time ?? train.time) : train.time)
+                .font(.mono(14, weight: .medium))
+                .tracking(0.3)
+                .foregroundStyle(Theme.inkSoft)
+        }
+    }
+
     private var heroBody: some View {
         HStack(alignment: .bottom, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                // Arrivals: the left side is the ORIGIN, so it gets the
-                // origin's departure time; train.time is the arrival at the
-                // destination and moves to the right column.
-                Text(train.isArrival ? (stops.first?.time ?? train.time) : train.time)
-                    .font(.mono(14, weight: .medium))
-                    .tracking(0.3)
-                    .foregroundStyle(Theme.inkSoft)
+                heroDepartureTime
                 Text(train.isArrival ? train.origin : boardingStation.name)
                     .font(.display(22))
                     .tracking(-0.2)
