@@ -1224,7 +1224,10 @@ struct JourneyScreen: View {
         if let wait {
             line += wait < 0 ? " · likely missed" : " · \(wait) min wait"
         }
-        line += " · alight \(connection.alightName.decodingHTMLEntities()) \(connection.alightTime)"
+        line += " · alight \(connection.alightName.decodingHTMLEntities())"
+        if !connection.alightTime.isEmpty {
+            line += " \(connection.alightTime)"
+        }
         return line
     }
 

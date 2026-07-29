@@ -982,12 +982,21 @@ final class TrainTracker {
                   let wait = TransferPlanner.minutesBetween(arrival, dep),
                   wait >= 5, wait <= 180
             else { continue }
+            // The old plan's alight time is meaningless on a later train:
+            // read it off the new train's calling points (board row, else a
+            // details fetch), or show none rather than a stale time.
+            var alightTime = AlternativeFinder.arrival(at: old.alightCrs, in: svc)
+            if alightTime == nil,
+               let det = try? await APIClient.shared.getServiceDetails(serviceId: svc.serviceId, crs: old.changeCrs),
+               let cp = det.subsequentCallingPoints.first(where: { $0.crs == old.alightCrs }) {
+                alightTime = TransferPlanner.bestTime(cp)
+            }
             pendingConnection = PendingConnection(
                 changeCrs: old.changeCrs, changeName: old.changeName,
                 serviceId: svc.serviceId, departTime: dep,
                 platform: svc.platform, towards: svc.destination,
                 alightName: old.alightName, alightCrs: old.alightCrs,
-                alightTime: AlternativeFinder.arrival(at: old.alightCrs, in: svc) ?? old.alightTime,
+                alightTime: alightTime ?? "",
                 operatorName: svc.operator, operatorCode: svc.operatorCode
             )
             didNotifyConnectionAtRisk = false
