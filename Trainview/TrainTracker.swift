@@ -287,8 +287,16 @@ final class TrainTracker {
     /// and auto-stop all describe the user's journey. Leading stops are kept —
     /// before boarding, "how far away is the train" is the useful signal.
     private func personalStops(_ stops: [Stop]) -> [Stop] {
-        guard let crs = alightingCRS,
-              let idx = stops.lastIndex(where: { $0.crs == crs }),
+        guard let crs = alightingCRS else { return stops }
+        // First call at the alighting station AFTER boarding: a station can
+        // appear twice in one list (circular routes; a dividing train's rear
+        // portion flattened onto the main route) and the passenger gets off
+        // the first time their train calls there. Falling back to the last
+        // occurrence covers alighting stations that only appear before the
+        // boarding index (arrivals-board journeys).
+        let boardingIdx = stops.firstIndex(where: { $0.crs == boardingStation?.code }) ?? 0
+        guard let idx = stops[boardingIdx...].firstIndex(where: { $0.crs == crs })
+                ?? stops.lastIndex(where: { $0.crs == crs }),
               idx > 0, idx < stops.count - 1 else { return stops }
         var trimmed = Array(stops[0...idx])
         let last = trimmed[trimmed.count - 1]
