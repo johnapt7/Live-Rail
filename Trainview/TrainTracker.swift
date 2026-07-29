@@ -128,6 +128,26 @@ final class TrainTracker {
     private var alertedProximityStops: Set<String> = []
     /// One-shot: the change-station heads-up has fired for this journey.
     private var didNotifyConnectionApproach = false
+    /// One-shot: the shrunken-wait warning has fired for this journey.
+    private var didNotifyConnectionAtRisk = false
+
+    /// Live minutes between leg 1's arrival at the change station and the
+    /// planned connection's departure — recomputed as delays move. Negative
+    /// once the arrival estimate passes the connection's departure. Nil
+    /// without a connection or a usable arrival time.
+    var connectionWaitMinutes: Int? {
+        guard let connection = pendingConnection,
+              let change = trackedStops.first(where: { $0.crs == connection.changeCrs })
+        else { return nil }
+        let arrival = TrainTracker.clockTimeString(for: change)
+        guard TrainTracker.isClockTime(arrival),
+              var wait = TransferPlanner.minutesBetween(arrival, connection.departTime)
+        else { return nil }
+        // minutesBetween wraps forward past midnight, so an arrival past the
+        // departure reads as ~24h of wait — fold it back to "missed".
+        if wait > 720 { wait -= 1440 }
+        return wait
+    }
 
     private static let snapshotKey = "trackingSnapshot"
 
@@ -135,6 +155,7 @@ final class TrainTracker {
         clearCompletionState()
         pendingConnection = PendingConnectionStore.peek(forLeg1: train.serviceId)
         didNotifyConnectionApproach = false
+        didNotifyConnectionAtRisk = false
         trackedTrain = train
         self.alightingCRS = alightingCRS
         trackedStops = personalStops(stops)
@@ -187,6 +208,7 @@ final class TrainTracker {
         alertedProximityStops = []
         pendingConnection = nil
         didNotifyConnectionApproach = false
+        didNotifyConnectionAtRisk = false
         endLiveActivity()
         UserDefaults.standard.removeObject(forKey: Self.snapshotKey)
     }
@@ -921,13 +943,21 @@ final class TrainTracker {
     /// which train to catch there, when, and from where. Local-only — the
     /// backend's Live Activity alerts don't know about connections.
     private func evaluateConnectionAlert() {
-        guard let connection = pendingConnection, !didNotifyConnectionApproach,
-              nextStopIndex >= 0, nextStopIndex < trackedStops.count,
-              trackedStops[nextStopIndex].crs == connection.changeCrs,
-              trackedStops.contains(where: { $0.hasDeparted })
-        else { return }
-        if notificationManager.notifyConnection(connection, arrived: false) {
+        guard let connection = pendingConnection else { return }
+        if !didNotifyConnectionApproach,
+           nextStopIndex >= 0, nextStopIndex < trackedStops.count,
+           trackedStops[nextStopIndex].crs == connection.changeCrs,
+           trackedStops.contains(where: { $0.hasDeparted }),
+           notificationManager.notifyConnection(connection, arrived: false) {
             didNotifyConnectionApproach = true
+        }
+        // Delays shrink the wait: warn once when it drops below the minimum
+        // sane change time (or goes negative — likely missed).
+        if !didNotifyConnectionAtRisk,
+           let wait = connectionWaitMinutes, wait < 5,
+           trackedStops.contains(where: { $0.hasDeparted }),
+           notificationManager.notifyConnectionAtRisk(connection, waitMinutes: wait) {
+            didNotifyConnectionAtRisk = true
         }
     }
 

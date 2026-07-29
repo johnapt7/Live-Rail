@@ -58,6 +58,22 @@ final class TrainNotificationManager {
         return true
     }
 
+    /// Fired once when delays shrink the change wait below the minimum sane
+    /// change time (or past the connection's departure entirely).
+    @discardableResult
+    func notifyConnectionAtRisk(_ connection: PendingConnection, waitMinutes: Int) -> Bool {
+        guard isAuthorized else { return false }
+        let body = waitMinutes < 0
+            ? "Your \(connection.departTime) to \(connection.towards) looks missed — check the next service from \(connection.changeName)."
+            : "Delays leave only \(waitMinutes) min at \(connection.changeName) for the \(connection.departTime) to \(connection.towards)."
+        scheduleNotification(
+            id: "\(serviceId)-connection-risk",
+            title: "Connection at risk",
+            body: body
+        )
+        return true
+    }
+
     /// Journey-complete confirmation: tells the user the destination was
     /// reached and live tracking has ended. Fired by the tracker exactly once
     /// per journey, from completeJourney.

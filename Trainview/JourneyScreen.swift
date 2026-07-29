@@ -1142,19 +1142,27 @@ struct JourneyScreen: View {
     /// once the train has arrived at the change station.
     private func connectionBanner(_ connection: PendingConnection) -> some View {
         let arrived = tracker.journeyCompleted
+        // Delays move the wait: below 10 minutes the banner turns amber,
+        // below the 5-minute floor (or missed entirely) it goes red.
+        let wait = tracker.connectionWaitMinutes
+        let atRisk = (wait ?? .max) < 5
+        let tight = (wait ?? .max) < 10
+        let tint: Color = atRisk ? Theme.cancelledText : ((tight || arrived) ? Theme.warn : accent)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Image(systemName: "figure.walk")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(arrived
-                        ? "TIME TO CHANGE — \(connection.changeName.uppercased())"
-                        : "CHANGE AT \(connection.changeName.uppercased())")
+                    Text(atRisk
+                        ? "CONNECTION AT RISK — \(connection.changeName.uppercased())"
+                        : (arrived
+                            ? "TIME TO CHANGE — \(connection.changeName.uppercased())"
+                            : "CHANGE AT \(connection.changeName.uppercased())"))
                         .font(.mono(11, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(Theme.ink)
-                    Text(connectionLine(connection))
+                    Text(connectionLine(connection, wait: wait))
                         .font(.ui(12))
                         .foregroundStyle(Theme.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1184,20 +1192,23 @@ struct JourneyScreen: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .background((arrived ? Theme.warn : accent).opacity(0.2))
+        .background(tint.opacity(0.2))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(arrived ? Theme.warn : accent, lineWidth: 1.5)
+                .stroke(tint, lineWidth: 1.5)
         )
         .padding(.horizontal, 18)
         .padding(.top, 14)
     }
 
-    private func connectionLine(_ connection: PendingConnection) -> String {
+    private func connectionLine(_ connection: PendingConnection, wait: Int?) -> String {
         var line = "\(connection.departTime) to \(connection.towards.decodingHTMLEntities())"
         if let platform = connection.platform, !platform.isEmpty, platform != "—" {
             line += " · Plat. \(platform)"
+        }
+        if let wait {
+            line += wait < 0 ? " · likely missed" : " · \(wait) min wait"
         }
         line += " · alight \(connection.alightName.decodingHTMLEntities()) \(connection.alightTime)"
         return line
