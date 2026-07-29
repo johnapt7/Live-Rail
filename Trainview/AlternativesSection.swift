@@ -113,6 +113,7 @@ struct AlternativesSection: View {
                 option: option,
                 originName: boardingStation.name,
                 destinationName: destinationName,
+                destinationCrs: destinationCrs,
                 accent: accent
             ) {
                 pendingLeg1 = option.leg1

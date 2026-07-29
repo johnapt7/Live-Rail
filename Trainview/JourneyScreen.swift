@@ -89,6 +89,9 @@ struct JourneyScreen: View {
                         if let divide = divideAssociations.first {
                             dividesBanner(divide)
                         }
+                        if isTrackingThis, let connection = tracker.pendingConnection {
+                            connectionBanner(connection)
+                        }
                         // Urgency order: the mid-journey question is "when
                         // do we reach X?" — stops come first; coach comfort,
                         // reliability and the map are leisure-grade reading.
@@ -1130,6 +1133,74 @@ struct JourneyScreen: View {
         .background(operatorBrand.bg.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .padding(.top, 18)
+    }
+
+    // MARK: - Connection banner
+
+    /// The onward leg, visible for the whole first ride: what to catch at
+    /// the change, when, from where — and the one-tap switch. Turns urgent
+    /// once the train has arrived at the change station.
+    private func connectionBanner(_ connection: PendingConnection) -> some View {
+        let arrived = tracker.journeyCompleted
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: "figure.walk")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(arrived
+                        ? "TIME TO CHANGE — \(connection.changeName.uppercased())"
+                        : "CHANGE AT \(connection.changeName.uppercased())")
+                        .font(.mono(11, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.ink)
+                    Text(connectionLine(connection))
+                        .font(.ui(12))
+                        .foregroundStyle(Theme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            Button {
+                Task {
+                    if let leg2 = await tracker.switchToConnection() {
+                        onSelectTrain(leg2)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Track the \(connection.departTime) to \(connection.towards.decodingHTMLEntities())")
+                        .font(.ui(13, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(Theme.cream)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Theme.ink)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background((arrived ? Theme.warn : accent).opacity(0.2))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(arrived ? Theme.warn : accent, lineWidth: 1.5)
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+    }
+
+    private func connectionLine(_ connection: PendingConnection) -> String {
+        var line = "\(connection.departTime) to \(connection.towards.decodingHTMLEntities())"
+        if let platform = connection.platform, !platform.isEmpty, platform != "—" {
+            line += " · Plat. \(platform)"
+        }
+        line += " · alight \(connection.alightName.decodingHTMLEntities()) \(connection.alightTime)"
+        return line
     }
 
     // MARK: - Reason Banner

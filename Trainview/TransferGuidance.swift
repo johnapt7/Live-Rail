@@ -252,6 +252,7 @@ struct TransferSection: View {
                 option: option,
                 originName: originStation.name,
                 destinationName: destinationName,
+                destinationCrs: destinationCrs,
                 accent: accent
             ) {
                 pendingLeg1 = option.leg1

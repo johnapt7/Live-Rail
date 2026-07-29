@@ -36,6 +36,28 @@ final class TrainNotificationManager {
         )
     }
 
+    /// Connection prompts for a two-leg journey: the heads-up as the change
+    /// station becomes next, and the call to action on arrival there.
+    /// Returns whether the alert was actually scheduled, so the tracker only
+    /// consumes its one-shot on success.
+    @discardableResult
+    func notifyConnection(_ connection: PendingConnection, arrived: Bool) -> Bool {
+        guard isAuthorized else { return false }
+        var body = "Your \(connection.departTime) to \(connection.towards) leaves"
+        if let platform = connection.platform, !platform.isEmpty, platform != "—" {
+            body += " from Platform \(platform)"
+        }
+        body += " — open to switch tracking in one tap."
+        scheduleNotification(
+            id: "\(serviceId)-connection-\(arrived ? "arrived" : "next")",
+            title: arrived
+                ? "Time to change at \(connection.changeName)"
+                : "\(connection.changeName) is next — change there",
+            body: body
+        )
+        return true
+    }
+
     /// Journey-complete confirmation: tells the user the destination was
     /// reached and live tracking has ended. Fired by the tracker exactly once
     /// per journey, from completeJourney.

@@ -48,10 +48,15 @@ struct TrackingConfirmationSheet: View {
         .presentationDetents([.fraction(0.62)])
         .presentationDragIndicator(.hidden)
         .onAppear {
-            // Arrivals default to getting off at the arrivals-board station —
-            // the service may continue beyond it (mid-route arrivals board).
-            if train.isArrival,
+            // A planned connection means the user gets off at the change
+            // station, not where this train terminates.
+            if let connection = PendingConnectionStore.peek(forLeg1: train.serviceId),
+               alightingOptions.contains(where: { $0.crs == connection.changeCrs }) {
+                alightingCRS = connection.changeCrs
+            } else if train.isArrival,
                let atBoard = alightingOptions.first(where: { $0.crs == boardStation.code }) {
+                // Arrivals default to getting off at the arrivals-board station —
+                // the service may continue beyond it (mid-route arrivals board).
                 alightingCRS = atBoard.crs
             } else {
                 alightingCRS = alightingOptions.last?.crs ?? ""

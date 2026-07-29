@@ -9,6 +9,7 @@ struct TransferJourneyScreen: View {
     let option: TransferOption
     let originName: String
     let destinationName: String
+    let destinationCrs: String
     let accent: Color
     /// Hands leg 1 to the journey screen — the train the user boards first.
     let onTrackLeg1: () -> Void
@@ -232,7 +233,28 @@ struct TransferJourneyScreen: View {
     // MARK: - Track button
 
     private var trackButton: some View {
-        Button(action: onTrackLeg1) {
+        Button {
+            // Plan the onward leg before tracking starts: the tracker picks
+            // it up, defaults the alighting stop to the change station, and
+            // runs the hand-off prompt at the change.
+            PendingConnectionStore.plan(
+                PendingConnection(
+                    changeCrs: option.changeCrs,
+                    changeName: option.changeName,
+                    serviceId: option.leg2.serviceId,
+                    departTime: option.leg2DepartureAtChange,
+                    platform: changePlatform,
+                    towards: option.leg2.destination,
+                    alightName: destinationName,
+                    alightCrs: destinationCrs,
+                    alightTime: option.arrivalAtDestination,
+                    operatorName: option.leg2.operator,
+                    operatorCode: option.leg2.operatorCode
+                ),
+                forLeg1: option.leg1.serviceId
+            )
+            onTrackLeg1()
+        } label: {
             HStack(spacing: 8) {
                 Image(systemName: "location.fill")
                     .font(.system(size: 12, weight: .semibold))

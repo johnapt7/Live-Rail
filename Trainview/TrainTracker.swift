@@ -23,7 +23,42 @@ struct TrackingSnapshot: Codable {
     /// Present (true) when this journey was tracked from an arrivals board.
     let isArrival: Bool?
     let alightingCRS: String?
+    /// The onward leg of a two-leg journey, when one was planned. Optional:
+    /// old snapshots predate it.
+    let connection: PendingConnection?
     let savedAt: Date
+}
+
+/// The second leg of a two-leg journey: everything needed to prompt the
+/// change and switch tracking onto the connecting train in one tap.
+struct PendingConnection: Codable {
+    let changeCrs: String
+    let changeName: String
+    let serviceId: String
+    let departTime: String
+    let platform: String?
+    /// The connecting train's own terminus ("towards Lymington Pier").
+    let towards: String
+    let alightName: String
+    let alightCrs: String
+    let alightTime: String
+    let operatorName: String
+    let operatorCode: String
+}
+
+/// Hands a planned connection from the two-leg overview (which has no
+/// tracker reference) to whichever tracker starts leg 1. Keyed by leg 1's
+/// service ID; read when tracking starts.
+enum PendingConnectionStore {
+    private static var planned: [String: PendingConnection] = [:]
+
+    static func plan(_ connection: PendingConnection, forLeg1 serviceId: String) {
+        planned[serviceId] = connection
+    }
+
+    static func peek(forLeg1 serviceId: String) -> PendingConnection? {
+        planned[serviceId]
+    }
 }
 
 @Observable
@@ -56,6 +91,9 @@ final class TrainTracker {
     /// short grace period (or when the user taps Done).
     var arrivalSummary: ArrivalSummary?
     var journeyCompleted: Bool { arrivalSummary != nil }
+    /// Set while the tracked journey has a planned onward connection — the
+    /// journey screen shows the change banner with the one-tap switch.
+    var pendingConnection: PendingConnection?
 
     struct ArrivalSummary {
         let station: String
@@ -88,11 +126,15 @@ final class TrainTracker {
     /// Stops whose ten-minutes-out alert has fired, keyed by CRS (or
     /// index+name when the feed carries none) — each stop alerts once.
     private var alertedProximityStops: Set<String> = []
+    /// One-shot: the change-station heads-up has fired for this journey.
+    private var didNotifyConnectionApproach = false
 
     private static let snapshotKey = "trackingSnapshot"
 
     func startTracking(train: Train, stops: [Stop], boardingStation: Station, alightingCRS: String? = nil, boardStation: Station? = nil) {
         clearCompletionState()
+        pendingConnection = PendingConnectionStore.peek(forLeg1: train.serviceId)
+        didNotifyConnectionApproach = false
         trackedTrain = train
         self.alightingCRS = alightingCRS
         trackedStops = personalStops(stops)
@@ -143,6 +185,8 @@ final class TrainTracker {
         notificationBaselineSet = false
         didNotifyDeparted = false
         alertedProximityStops = []
+        pendingConnection = nil
+        didNotifyConnectionApproach = false
         endLiveActivity()
         UserDefaults.standard.removeObject(forKey: Self.snapshotKey)
     }
@@ -159,7 +203,8 @@ final class TrainTracker {
             boardingCode: boardingStation.code, boardingName: boardingStation.name,
             boardCode: boardStation?.code, boardName: boardStation?.name,
             isArrival: train.isArrival,
-            alightingCRS: alightingCRS, savedAt: Date()
+            alightingCRS: alightingCRS,
+            connection: pendingConnection, savedAt: Date()
         )
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: Self.snapshotKey)
@@ -201,6 +246,7 @@ final class TrainTracker {
         boardingStation = boarding
         boardStation = board
         alightingCRS = snapshot.alightingCRS
+        pendingConnection = snapshot.connection
         lastPolled = Date()
         isTracking = true
 
@@ -746,6 +792,8 @@ final class TrainTracker {
             notificationManager.scheduleDepartureReminder(departure: departure, platform: platformToReport)
         }
 
+        evaluateConnectionAlert()
+
         // Proximity alerts: ten minutes before a stop's arrival — alerting
         // when the train leaves the previous stop is far too early on a
         // long leg and too late on a short hop. The user's own stop (last
@@ -840,15 +888,73 @@ final class TrainTracker {
 
         pollingTask?.cancel()
         pollingTask = nil
-        notificationManager.notifyArrived(at: destination.station)
+        if let connection = pendingConnection {
+            notificationManager.notifyConnection(connection, arrived: true)
+        } else {
+            notificationManager.notifyArrived(at: destination.station)
+        }
         endLiveActivity(arrived: true)
         unregisterBackendPush()
 
+        // With an onward connection, the banner (and its one-tap switch)
+        // must outlive the usual grace period — it stays until the user
+        // switches or taps Done.
+        guard pendingConnection == nil else { return }
         completionDismissTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(180))
             guard !Task.isCancelled else { return }
             await MainActor.run { self?.stopTracking() }
         }
+    }
+
+    // MARK: - Connection hand-off
+
+    /// One-shot heads-up when the change station becomes the next stop:
+    /// which train to catch there, when, and from where. Local-only — the
+    /// backend's Live Activity alerts don't know about connections.
+    private func evaluateConnectionAlert() {
+        guard let connection = pendingConnection, !didNotifyConnectionApproach,
+              nextStopIndex >= 0, nextStopIndex < trackedStops.count,
+              trackedStops[nextStopIndex].crs == connection.changeCrs,
+              trackedStops.contains(where: { $0.hasDeparted })
+        else { return }
+        if notificationManager.notifyConnection(connection, arrived: false) {
+            didNotifyConnectionApproach = true
+        }
+    }
+
+    /// One-tap hand-off at the change station: stops leg-1 tracking and
+    /// starts tracking the connecting train from the change. Mirrors the
+    /// relaunch-resume path — minimal state up front, the first poll
+    /// rebuilds stops and live position from the change station's board.
+    @MainActor
+    func switchToConnection() async -> Train? {
+        guard let connection = pendingConnection else { return nil }
+        let change = Station(code: connection.changeCrs, name: connection.changeName)
+        var leg2 = Train(
+            restoredId: connection.serviceId, time: connection.departTime,
+            origin: connection.changeName, destination: connection.towards,
+            destinationCrs: "", platform: connection.platform ?? "—",
+            operator: connection.operatorName, operatorCode: connection.operatorCode,
+            rid: nil, uid: nil
+        )
+        leg2.originCrs = connection.changeCrs
+        stopTracking()
+        trackedTrain = leg2
+        boardingStation = change
+        boardStation = change
+        alightingCRS = connection.alightCrs
+        lastPolled = Date()
+        isTracking = true
+        saveSnapshot(train: leg2, boardingStation: change)
+        notificationManager.configure(train: leg2, boardingStation: change)
+        await poll()
+        guard isTracking else { return leg2 }
+        if !trackedStops.isEmpty {
+            startLiveActivity(train: leg2, stops: trackedStops)
+        }
+        startPolling()
+        return leg2
     }
 
     /// The Done button on the journey-complete banner.

@@ -45,6 +45,7 @@ struct JourneysSection: View {
                 option: option,
                 originName: origin.name,
                 destinationName: destination.name,
+                destinationCrs: destination.code,
                 accent: accent
             ) {
                 pendingLeg1 = option.leg1
