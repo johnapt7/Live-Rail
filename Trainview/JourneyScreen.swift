@@ -1190,6 +1190,20 @@ struct JourneyScreen: View {
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            if atRisk {
+                Button {
+                    Task { _ = await tracker.replanConnection() }
+                } label: {
+                    Text("Find the next train from \(connection.changeName.decodingHTMLEntities())")
+                        .font(.ui(12, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Theme.ink.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(14)
         .background(tint.opacity(0.2))

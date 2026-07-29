@@ -961,6 +961,44 @@ final class TrainTracker {
         }
     }
 
+    /// Re-plans a missed or at-risk connection: the next train from the
+    /// change station toward the alighting stop leaving a sane margin after
+    /// leg 1's live arrival. Replaces pendingConnection in place, so the
+    /// banner, alerts, and switch all follow the new train.
+    @MainActor
+    func replanConnection() async -> Bool {
+        guard let old = pendingConnection,
+              let change = trackedStops.first(where: { $0.crs == old.changeCrs })
+        else { return false }
+        let arrival = TrainTracker.clockTimeString(for: change)
+        guard TrainTracker.isClockTime(arrival),
+              let response = try? await APIClient.shared.getBoard(crs: old.changeCrs)
+        else { return false }
+        for svc in response.services where !svc.isCancelled && svc.status != "cancelled" {
+            guard svc.serviceId != old.serviceId,
+                  AlternativeFinder.serves(old.alightCrs, service: svc, trustedWhenUnknown: false),
+                  let dep = TimeFormat.parseClockTime(svc.expectedTime)
+                    ?? TimeFormat.parseClockTime(svc.scheduledTime),
+                  let wait = TransferPlanner.minutesBetween(arrival, dep),
+                  wait >= 5, wait <= 180
+            else { continue }
+            pendingConnection = PendingConnection(
+                changeCrs: old.changeCrs, changeName: old.changeName,
+                serviceId: svc.serviceId, departTime: dep,
+                platform: svc.platform, towards: svc.destination,
+                alightName: old.alightName, alightCrs: old.alightCrs,
+                alightTime: AlternativeFinder.arrival(at: old.alightCrs, in: svc) ?? old.alightTime,
+                operatorName: svc.operator, operatorCode: svc.operatorCode
+            )
+            didNotifyConnectionAtRisk = false
+            if let train = trackedTrain, let boarding = boardingStation {
+                saveSnapshot(train: train, boardingStation: boarding)
+            }
+            return true
+        }
+        return false
+    }
+
     /// One-tap hand-off at the change station: stops leg-1 tracking and
     /// starts tracking the connecting train from the change. Mirrors the
     /// relaunch-resume path — minimal state up front, the first poll
