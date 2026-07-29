@@ -137,18 +137,18 @@ enum TransferPlanner {
 // MARK: - Row
 
 /// One two-leg route, in the same row idiom as the alternatives card.
-/// Tapping hands the leg-1 train to `onSelectTrain` — that's the train the
-/// user needs to board first.
+/// Tapping opens the two-leg overview so the change is understood before
+/// anything is boarded.
 struct TransferOptionRow: View {
     let option: TransferOption
-    let onSelectTrain: (Train) -> Void
+    let onTap: () -> Void
 
     var body: some View {
         let depart = TimeFormat.parseClockTime(option.leg1.expectedTime) ?? option.leg1.scheduledTime
         let duration = TimeFormat.journeyDuration(from: depart, to: option.arrivalAtDestination)
 
         Button {
-            onSelectTrain(Train(from: option.leg1))
+            onTap()
         } label: {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -219,6 +219,10 @@ struct TransferSection: View {
     @State private var options: [TransferOption] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var selectedOption: TransferOption?
+    /// Leg 1 queued for tracking; the push fires in the sheet's onDismiss —
+    /// a navigation push mid-dismissal can be swallowed by SwiftUI.
+    @State private var pendingLeg1: BoardService?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -235,6 +239,24 @@ struct TransferSection: View {
         )
         .task(id: originStation.code + ":" + destinationCrs) {
             await load()
+        }
+        // The two-leg overview: the change must be understood before any
+        // train is boarded, so the row opens this rather than leg 1 direct.
+        .sheet(item: $selectedOption, onDismiss: {
+            if let leg1 = pendingLeg1 {
+                pendingLeg1 = nil
+                onSelectTrain(Train(from: leg1))
+            }
+        }) { option in
+            TransferJourneyScreen(
+                option: option,
+                originName: originStation.name,
+                destinationName: destinationName,
+                accent: accent
+            ) {
+                pendingLeg1 = option.leg1
+                selectedOption = nil
+            }
         }
     }
 
@@ -275,7 +297,9 @@ struct TransferSection: View {
         } else {
             VStack(spacing: 6) {
                 ForEach(options) { option in
-                    TransferOptionRow(option: option, onSelectTrain: onSelectTrain)
+                    TransferOptionRow(option: option) {
+                        selectedOption = option
+                    }
                 }
             }
         }

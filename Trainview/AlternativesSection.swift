@@ -78,6 +78,10 @@ struct AlternativesSection: View {
     @State private var transferOptions: [TransferOption] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var selectedTransfer: TransferOption?
+    /// Leg 1 queued for tracking; the push fires in the sheet's onDismiss —
+    /// a navigation push mid-dismissal can be swallowed by SwiftUI.
+    @State private var pendingLeg1: BoardService?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -96,6 +100,24 @@ struct AlternativesSection: View {
         .padding(.top, 14)
         .task(id: boardingStation.code + ":" + destinationCrs) {
             await load()
+        }
+        // Same rule as the board's transfer card: the change is understood
+        // before anything is boarded.
+        .sheet(item: $selectedTransfer, onDismiss: {
+            if let leg1 = pendingLeg1 {
+                pendingLeg1 = nil
+                onSelectTrain(Train(from: leg1))
+            }
+        }) { option in
+            TransferJourneyScreen(
+                option: option,
+                originName: boardingStation.name,
+                destinationName: destinationName,
+                accent: accent
+            ) {
+                pendingLeg1 = option.leg1
+                selectedTransfer = nil
+            }
         }
     }
 
@@ -138,7 +160,9 @@ struct AlternativesSection: View {
                     .font(.ui(11))
                     .foregroundStyle(Theme.inkSoft)
                 ForEach(transferOptions) { option in
-                    TransferOptionRow(option: option, onSelectTrain: onSelectTrain)
+                    TransferOptionRow(option: option) {
+                        selectedTransfer = option
+                    }
                 }
             }
         } else if alternatives.isEmpty {
