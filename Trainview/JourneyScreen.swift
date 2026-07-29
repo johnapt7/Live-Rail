@@ -35,7 +35,13 @@ struct JourneyScreen: View {
         max(stops.count - 1 - boardingIndex, 0)
     }
 
-    private var originName: String { details?.origin?.name ?? train.origin }
+    /// While tracking, the hero's left side is where THIS journey boards —
+    /// after a connection switch that's the change station, not the through
+    /// service's own origin (a shuttle can technically start in London).
+    private var originName: String {
+        if isTrackingThis, let boarding = tracker.boardingStation { return boarding.name }
+        return details?.origin?.name ?? train.origin
+    }
     private var destName: String { details?.destination?.name ?? train.destination }
     private var originCrs: String { details?.origin?.crs ?? "" }
     private var destCrs: String { details?.destination?.crs ?? "" }

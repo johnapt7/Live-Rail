@@ -931,13 +931,20 @@ struct HomeScreen: View {
     // MARK: - Footer
 
     private var footerView: some View {
-        HStack(spacing: 6) {
-            LiveDot(size: 9)
-            Text("LIVE DATA")
-                .font(.mono(10))
-                .tracking(1.8)
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                LiveDot(size: 9)
+                Text("LIVE DATA")
+                    .font(.mono(10))
+                    .tracking(1.8)
+                    .foregroundStyle(Theme.inkMute)
+            }
+            // Licence condition of the open rail data feeds.
+            Text("Powered by National Rail Enquiries")
+                .font(.ui(11))
                 .foregroundStyle(Theme.inkMute)
         }
+        .frame(maxWidth: .infinity)
         .padding(.top, 28)
         .padding(.bottom, 6)
     }
