@@ -1827,15 +1827,10 @@ private struct StopRow: View {
     private var timeColumn: some View {
         VStack(alignment: .trailing, spacing: 2) {
             if let trust = trustInfo {
-                HStack(spacing: 5) {
-                    Text(trust.actualTime)
-                        .font(.mono(14, weight: .medium))
-                        .tracking(-0.1)
-                        .foregroundStyle(trust.delayMinutes > 0 ? Theme.delayedText : Theme.ink)
-                    if trust.delayMinutes != 0 {
-                        DelayChip(minutes: trust.delayMinutes)
-                    }
-                }
+                Text(trust.actualTime)
+                    .font(.mono(14, weight: .medium))
+                    .tracking(-0.1)
+                    .foregroundStyle(trust.delayMinutes > 0 ? Theme.delayedText : Theme.ink)
                 if trust.actualTime != stop.time {
                     Text(stop.time)
                         .font(.mono(11))
@@ -1849,9 +1844,17 @@ private struct StopRow: View {
                         .font(.mono(14, weight: .medium))
                         .tracking(-0.1)
                         .foregroundStyle(timeColor)
-                    if !showsActualTime, let delay = stop.delayMinutes, delay != 0 {
+                    if displayTime == stop.time, let delay = stop.delayMinutes, delay != 0 {
+                        // No live time to show — the chip is the only signal.
                         DelayChip(minutes: delay)
                     }
+                }
+                if displayTime != stop.time {
+                    Text(stop.time)
+                        .font(.mono(11))
+                        .tracking(-0.1)
+                        .foregroundStyle(Theme.inkMute)
+                        .strikethrough(color: Theme.inkMute)
                 }
             }
             if !stopStatusLabel.isEmpty {
@@ -1863,23 +1866,24 @@ private struct StopRow: View {
         }
     }
 
-    private var showsActualTime: Bool {
-        guard let actual = stop.actualTime else { return false }
-        return StopRow.parsesAsTime(actual)
-    }
-
-    /// When we've replaced the scheduled time with a real observed time, tint
-    /// it amber if late so the change is still legible at a glance.
+    /// When a live time replaces the scheduled one, tint it amber if late so
+    /// the change is still legible at a glance.
     private var timeColor: Color {
-        guard showsActualTime, let delay = stop.delayMinutes, delay > 0 else {
+        guard displayTime != stop.time, let delay = stop.delayMinutes, delay > 0 else {
             return Theme.ink
         }
         return Theme.delayedText
     }
 
+    /// The clearest time we can show: observed, else the live estimate, else
+    /// the schedule. A delayed stop reads "17:23" over a struck-through
+    /// "17:18" rather than schedule-plus-chip arithmetic.
     private var displayTime: String {
         if let actual = stop.actualTime, StopRow.parsesAsTime(actual) {
             return actual
+        }
+        if let expected = stop.expectedTime, StopRow.parsesAsTime(expected) {
+            return expected
         }
         return stop.time
     }
