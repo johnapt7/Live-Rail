@@ -73,11 +73,6 @@ struct JourneyScreen: View {
                         .transition(.opacity)
                 } else {
                     VStack(spacing: 0) {
-                        if isTrackingThis {
-                            LiveTrackingStrip(tracker: tracker, accent: accent)
-                                .padding(.horizontal, 18)
-                                .padding(.top, 14)
-                        }
                         if let reason = train.cancelReason ?? train.delayReason {
                             reasonBanner(reason)
                         }
@@ -1341,6 +1336,30 @@ struct JourneyScreen: View {
 
     // MARK: - Stops
 
+    /// Departure→arrival window for the stretch of track the train is on
+    /// right now; nil while it sits at a station or when times are missing.
+    /// Feeds the growing line fill between the current and next stop rows.
+    private var activeSegmentWindow: ClosedRange<Date>? {
+        guard isTrackingThis,
+              !tracker.journeyCompleted,
+              tracker.currentStopIndex != tracker.nextStopIndex,
+              let start = tracker.previousStopDepartureDate,
+              let end = tracker.nextStopArrivalDate,
+              start < end
+        else { return nil }
+        return start...end
+    }
+
+    /// Border tint for the stops card while tracking — mirrors the status
+    /// colour the old standalone strip carried.
+    private var trackingTint: Color {
+        switch tracker.trainStatus {
+        case .delayed: return Theme.delayedText
+        case .cancelled: return Theme.cancelledText
+        case .onTime: return accent
+        }
+    }
+
     private var stopsSection: some View {
         Group {
             if !displayedStops.isEmpty {
@@ -1356,14 +1375,28 @@ struct JourneyScreen: View {
                     }
 
                     VStack(spacing: 0) {
+                        // While tracking, the live status lives at the top of
+                        // the stops card — the list below is the progress
+                        // display, so the header only carries what the list
+                        // can't: liveness, the countdown, the destination
+                        // verdict, and the stop control.
+                        if isTrackingThis {
+                            LiveStatusHeader(tracker: tracker, accent: accent)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 10)
+                                .padding(.bottom, 12)
+                            Divider().overlay(Theme.line)
+                        }
                         ForEach(Array(displayedStops.enumerated()), id: \.element.id) { index, stop in
+                            let state = trackingState(for: index)
                             StopRow(
                                 stop: stop,
                                 isFirst: index == 0,
                                 isLast: index == displayedStops.count - 1,
                                 accent: accent,
-                                trackingState: trackingState(for: index),
-                                trustInfo: trustInfoForStop(stop)
+                                trackingState: state,
+                                trustInfo: trustInfoForStop(stop),
+                                segmentWindow: (state == .current || state == .next) ? activeSegmentWindow : nil
                             )
                         }
                     }
@@ -1371,6 +1404,12 @@ struct JourneyScreen: View {
                     .padding(.vertical, 6)
                     .background(Theme.card)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay {
+                        if isTrackingThis {
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(trackingTint.opacity(0.35), lineWidth: 1)
+                        }
+                    }
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 22)
@@ -1494,6 +1533,10 @@ private struct StopRow: View {
     let accent: Color
     var trackingState: StopTrackingState = .notTracking
     var trustInfo: TRUSTStopInfo? = nil
+    /// Departure→arrival window of the segment the train is currently on.
+    /// Non-nil only on the current and next rows while tracking — drives the
+    /// timer-grown fill between them.
+    var segmentWindow: ClosedRange<Date>? = nil
 
     private var isEndpoint: Bool {
         stop.type == .origin || stop.type == .destination
@@ -1505,68 +1548,155 @@ private struct StopRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            timeline
+            marker
             content
+                .opacity(isPassed ? 0.5 : 1)
             Spacer()
             timeColumn
+                .opacity(isPassed ? 0.5 : 1)
         }
         .padding(.vertical, 10)
-        .opacity(isPassed ? 0.5 : 1)
+        // The route line paints behind the full row height so it reads as
+        // one continuous line, not per-row dashes; markers cover it. Only
+        // the text dims on passed stops — the covered line stays vivid.
+        .background(alignment: .leading) {
+            routeLine
+                .frame(width: 22)
+        }
+        // The tram marker rides the tip of the growing fill between stops,
+        // so it always leads the line instead of being left at the last
+        // stop. Drawn as an overlay so it passes over the static dots.
+        .overlay(alignment: .leading) {
+            movingMarker
+                .frame(width: 22)
+        }
     }
 
-    private var lineColor: Color {
-        isPassed || isCurrent ? accent : Theme.lineStrong
+    // MARK: Route line
+
+    /// How a half-row of route line renders: covered track is thick accent,
+    /// track ahead is thin grey, and the segment in progress fills top-down
+    /// on a timer.
+    private enum LineStyle {
+        case covered
+        case ahead
+        case filling
     }
 
-    private var timeline: some View {
+    private var routeLine: some View {
+        VStack(spacing: 0) {
+            halfLine(hidden: isFirst, style: upperStyle, isLower: false)
+            halfLine(hidden: isLast, style: lowerStyle, isLower: true)
+        }
+    }
+
+    private var upperStyle: LineStyle {
+        if isPassed || isCurrent { return .covered }
+        if isNext, segmentWindow != nil { return .filling }
+        return .ahead
+    }
+
+    private var lowerStyle: LineStyle {
+        if isPassed { return .covered }
+        if isCurrent, segmentWindow != nil { return .filling }
+        return .ahead
+    }
+
+    @ViewBuilder
+    private func halfLine(hidden: Bool, style: LineStyle, isLower: Bool) -> some View {
+        if hidden {
+            Color.clear
+        } else {
+            switch style {
+            case .covered:
+                Rectangle()
+                    .fill(accent)
+                    .frame(width: 5)
+                    .frame(maxWidth: .infinity)
+            case .ahead:
+                Rectangle()
+                    .fill(Theme.lineStrong)
+                    .frame(width: 2)
+                    .frame(maxWidth: .infinity)
+            case .filling:
+                GeometryReader { geo in
+                    TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                        ZStack(alignment: .top) {
+                            Rectangle()
+                                .fill(Theme.lineStrong)
+                                .frame(width: 2)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            Capsule()
+                                .fill(accent)
+                                .frame(width: 5, height: geo.size.height * halfFraction(now: context.date, isLower: isLower))
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Elapsed fraction of the in-flight segment, 0 at departure from the
+    /// last stop, 1 at arrival to the next.
+    private func segmentFraction(now: Date) -> Double {
+        guard let window = segmentWindow else { return 0 }
+        let total = window.upperBound.timeIntervalSince(window.lowerBound)
+        guard total > 0 else { return 0 }
+        return min(max(now.timeIntervalSince(window.lowerBound) / total, 0), 1)
+    }
+
+    /// Progress through the in-flight segment, mapped onto this half-row.
+    /// The stretch between two stops spans the current row's lower half then
+    /// the next row's upper half, so each half covers half the journey.
+    private func halfFraction(now: Date, isLower: Bool) -> Double {
+        let f = segmentFraction(now: now)
+        return isLower ? min(f * 2, 1) : max(f * 2 - 1, 0)
+    }
+
+    /// The tram marker positioned at the tip of the fill. The current row
+    /// owns it through the first half of the hop, the next row through the
+    /// second, so it hands off cleanly at the row boundary.
+    @ViewBuilder
+    private var movingMarker: some View {
+        if segmentWindow != nil {
+            GeometryReader { geo in
+                TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                    let f = segmentFraction(now: context.date)
+                    let ownsTip = isCurrent ? f < 0.5 : f >= 0.5
+                    if ownsTip {
+                        let halfH = geo.size.height / 2
+                        let y = isCurrent
+                            ? halfH + min(f * 2, 1) * halfH
+                            : max(f * 2 - 1, 0) * halfH
+                        TramMarker(accent: accent)
+                            .position(x: 11, y: y)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Marker
+
+    private var marker: some View {
         ZStack {
-            if !isFirst {
-                VStack {
-                    Rectangle()
-                        .fill(isPassed || isCurrent ? accent : Theme.lineStrong)
-                        .frame(width: 2)
-                    Spacer()
-                }
-                .frame(height: 20)
-                .offset(y: -15)
-            }
-
-            if !isLast {
-                VStack {
-                    Spacer()
-                    Rectangle()
-                        .fill(isPassed ? accent : Theme.lineStrong)
-                        .frame(width: 2)
-                }
-                .frame(height: 20)
-                .offset(y: 15)
-            }
-
             if isCurrent {
-                ZStack {
-                    Circle()
-                        .fill(accent)
-                        .frame(width: 16, height: 16)
-                    Circle()
-                        .stroke(accent.opacity(0.4), lineWidth: 3)
-                        .frame(width: 22, height: 22)
-                    Image(systemName: "tram.fill")
-                        .font(.system(size: 7))
-                        .foregroundStyle(Theme.ink)
+                if segmentWindow == nil {
+                    // Sat at the station (or no live window) — the tram
+                    // marker sits on the stop itself.
+                    TramMarker(accent: accent)
+                } else {
+                    // Train has left this stop; the tram rides the line
+                    // (overlay), so the stop itself reads as departed.
+                    passedDot
                 }
             } else if isPassed {
-                ZStack {
-                    Circle()
-                        .fill(accent)
-                        .frame(width: isEndpoint ? 14 : 10, height: isEndpoint ? 14 : 10)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 6, weight: .bold))
-                        .foregroundStyle(Theme.ink)
-                }
+                passedDot
             } else if isEndpoint {
                 ZStack {
                     Circle()
-                        .fill(isNext ? accent : accent)
+                        .fill(accent)
                         .stroke(Theme.ink, lineWidth: 2)
                         .frame(width: 14, height: 14)
                     Circle()
@@ -1577,10 +1707,21 @@ private struct StopRow: View {
                 Circle()
                     .fill(Theme.cream)
                     .stroke(isNext ? accent : Theme.inkMute, lineWidth: isNext ? 2 : 1.5)
-                    .frame(width: 10, height: 10)
+                    .frame(width: isNext ? 12 : 10, height: isNext ? 12 : 10)
             }
         }
         .frame(width: 22, height: 30)
+    }
+
+    private var passedDot: some View {
+        ZStack {
+            Circle()
+                .fill(accent)
+                .frame(width: isEndpoint ? 14 : 10, height: isEndpoint ? 14 : 10)
+            Image(systemName: "checkmark")
+                .font(.system(size: 6, weight: .bold))
+                .foregroundStyle(Theme.ink)
+        }
     }
 
     private var content: some View {
@@ -1731,6 +1872,36 @@ private struct StopRow: View {
     }
 }
 
+/// The live train marker: a breathing halo plus a sonar ripple, so the
+/// current position reads as alive rather than just another dot.
+private struct TramMarker: View {
+    let accent: Color
+    @State private var pulsing = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(accent.opacity(0.18))
+                .frame(width: 28, height: 28)
+                .scaleEffect(pulsing ? 1.2 : 0.95)
+                .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: pulsing)
+            Circle()
+                .stroke(accent.opacity(0.6), lineWidth: 1.5)
+                .frame(width: 18, height: 18)
+                .scaleEffect(pulsing ? 2.1 : 1.0)
+                .opacity(pulsing ? 0 : 0.7)
+                .animation(.easeOut(duration: 1.8).repeatForever(autoreverses: false), value: pulsing)
+            Circle()
+                .fill(accent)
+                .frame(width: 18, height: 18)
+            Image(systemName: "tram.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(Theme.ink)
+        }
+        .onAppear { pulsing = true }
+    }
+}
+
 private struct StrokeLine: Shape {
     func path(in rect: CGRect) -> Path {
         Path { p in
@@ -1760,9 +1931,14 @@ private struct DelayChip: View {
     }
 }
 
-// MARK: - Live tracking strip
+// MARK: - Live status header
+//
+// Sits at the top of the "Calling at" card while tracking. The stop list
+// below it is the progress display, so this header carries only what the
+// list can't show: liveness, the countdown sentence, the destination
+// verdict, and the stop-tracking control.
 
-private struct LiveTrackingStrip: View {
+private struct LiveStatusHeader: View {
     var tracker: TrainTracker
     let accent: Color
 
@@ -1789,12 +1965,6 @@ private struct LiveTrackingStrip: View {
         return tracker.trackedStops[idx]
     }
 
-    private var nextStop: Stop? {
-        let idx = tracker.nextStopIndex
-        guard idx >= 0, idx < tracker.trackedStops.count else { return nil }
-        return tracker.trackedStops[idx]
-    }
-
     private var destinationStop: Stop? { tracker.trackedStops.last }
 
     private var atOrigin: Bool {
@@ -1807,20 +1977,19 @@ private struct LiveTrackingStrip: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             header
-            stopRow
-            progressBar
-            Divider().overlay(Theme.line)
-            footerRow
+            TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                VStack(alignment: .leading, spacing: 6) {
+                    sentenceCountdown(now: context.date)
+                    destinationStatusText
+                        .font(.ui(13))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .padding(14)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(statusTint.opacity(0.35), lineWidth: 1)
-        )
     }
 
     // MARK: - Header
@@ -1898,165 +2067,7 @@ private struct LiveTrackingStrip: View {
         return "\(minutes / 60)h ago"
     }
 
-    // MARK: - Stop row (Departed from | Next stop)
-
-    private var stopRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            stopColumn(
-                label: atOrigin ? "DEPARTING FROM" : "DEPARTED FROM",
-                stop: lastDeparted,
-                trailing: false
-            )
-            stopColumn(
-                label: atTerminus ? "ARRIVED AT" : "NEXT STOP",
-                stop: atTerminus ? destinationStop : nextStop,
-                trailing: true
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func stopColumn(label: String, stop: Stop?, trailing: Bool) -> some View {
-        VStack(alignment: trailing ? .trailing : .leading, spacing: 4) {
-            Text(label)
-                .font(.mono(9, weight: .semibold))
-                .tracking(1.0)
-                .foregroundStyle(Theme.inkMute)
-            HStack(spacing: 6) {
-                Text(stop?.station ?? "—")
-                    .font(.ui(13, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
-                if let stop, let time = stopClockTime(stop) {
-                    Text(time)
-                        .font(.mono(12, weight: .semibold))
-                        .foregroundStyle(Theme.inkMute)
-                }
-                if let stop, let delay = stop.delayMinutes, delay != 0 {
-                    DelayChip(minutes: delay)
-                }
-            }
-            if let stop, let platform = displayPlatform(stop) {
-                Text("Platform \(platform)")
-                    .font(.mono(10, weight: .medium))
-                    .foregroundStyle(Theme.inkMute)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
-    }
-
-    private func stopClockTime(_ stop: Stop) -> String? {
-        let s = TrainTracker.clockTimeString(for: stop)
-        return s.isEmpty ? nil : s
-    }
-
-    private func displayPlatform(_ stop: Stop) -> String? {
-        (stop.platform.isEmpty || stop.platform == "—") ? nil : stop.platform
-    }
-
-    // MARK: - Multi-stop timeline
-
-    private var progressBar: some View {
-        let stopCount = max(tracker.trackedStops.count, 2)
-        let segmentCount = max(stopCount - 1, 1)
-
-        return ZStack(alignment: .leading) {
-            Capsule()
-                .fill(Theme.ink.opacity(0.08))
-                .frame(height: 3)
-
-            HStack(spacing: 0) {
-                ForEach(0..<segmentCount, id: \.self) { i in
-                    timelineSegment(index: i)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(height: 3)
-
-            GeometryReader { geo in
-                ForEach(0..<stopCount, id: \.self) { i in
-                    let fraction = CGFloat(i) / CGFloat(segmentCount)
-                    timelineDot(at: i, totalStops: stopCount)
-                        .position(x: fraction * geo.size.width, y: geo.size.height / 2)
-                }
-            }
-            .frame(height: 16)
-        }
-        .frame(height: 16)
-    }
-
-    @ViewBuilder
-    private func timelineSegment(index: Int) -> some View {
-        if index < tracker.currentStopIndex {
-            // Passed segment — solid fill
-            Capsule()
-                .fill(statusTint)
-                .frame(height: 3)
-        } else if index == tracker.currentStopIndex,
-                  let prev = tracker.previousStopDepartureDate,
-                  let next = tracker.nextStopArrivalDate,
-                  prev < next,
-                  tracker.currentStopIndex != tracker.nextStopIndex {
-            // Active segment — smooth timer-driven fill
-            ProgressView(timerInterval: prev...next, countsDown: false) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
-            }
-            .progressViewStyle(.linear)
-            .tint(statusTint)
-            .frame(height: 3)
-        } else {
-            Color.clear.frame(height: 3)
-        }
-    }
-
-    @ViewBuilder
-    private func timelineDot(at index: Int, totalStops: Int) -> some View {
-        let isPassed = index < tracker.currentStopIndex
-        let isCurrent = index == tracker.currentStopIndex && tracker.currentStopIndex != tracker.nextStopIndex
-        let isNext = index == tracker.nextStopIndex && !isCurrent
-        let isEndpoint = index == 0 || index == totalStops - 1
-
-        if isCurrent {
-            ZStack {
-                Circle().fill(statusTint.opacity(0.25)).frame(width: 16, height: 16)
-                Circle().fill(statusTint).frame(width: 8, height: 8)
-            }
-        } else if isPassed {
-            Circle()
-                .fill(statusTint)
-                .frame(width: isEndpoint ? 8 : 5, height: isEndpoint ? 8 : 5)
-        } else if isNext {
-            Circle()
-                .fill(Theme.card)
-                .overlay(Circle().stroke(statusTint, lineWidth: 2))
-                .frame(width: 10, height: 10)
-        } else if isEndpoint {
-            Circle()
-                .fill(Theme.ink.opacity(0.25))
-                .frame(width: 7, height: 7)
-        } else {
-            Circle()
-                .fill(Theme.ink.opacity(0.18))
-                .frame(width: 4, height: 4)
-        }
-    }
-
-    // MARK: - Footer (Time to next | Destination)
-
-    private var footerRow: some View {
-        TimelineView(.periodic(from: .now, by: 1.0)) { context in
-            VStack(alignment: .leading, spacing: 6) {
-                sentenceCountdown(now: context.date)
-                destinationStatusText
-                    .font(.ui(13))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
+    // MARK: - Countdown & destination verdict
 
     @ViewBuilder
     private func sentenceCountdown(now: Date) -> some View {
