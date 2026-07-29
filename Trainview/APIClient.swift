@@ -97,6 +97,28 @@ final class APIClient {
         }
     }
 
+    // MARK: - Journey planning
+
+    private struct JourneyPlanRequest: Encodable {
+        struct Prefs: Encodable {
+            let pageSize: Int
+            let maxResults: Int
+        }
+        let originCrs: String
+        let destinationCrs: String
+        let preferences: Prefs
+    }
+
+    /// Direct and one-change journey options between two stations, from the
+    /// backend planner (live data, roughly the next two hours).
+    func planJourney(from originCrs: String, to destinationCrs: String, maxResults: Int = 8) async throws -> JourneyPlanResponse {
+        try await send("POST", "/journey/plan", body: JourneyPlanRequest(
+            originCrs: originCrs,
+            destinationCrs: destinationCrs,
+            preferences: .init(pageSize: maxResults, maxResults: maxResults)
+        ))
+    }
+
     /// Request with a method and JSON body, returning a decoded response.
     /// Used by the account endpoints (POST/PUT/DELETE).
     private func send<T: Decodable, Body: Encodable>(_ method: String, _ path: String, body: Body) async throws -> T {

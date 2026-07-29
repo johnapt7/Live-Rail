@@ -142,6 +142,53 @@ struct CallingPointResponse: Codable, Identifiable {
     let status: String
 }
 
+// MARK: - Journey planning
+
+struct JourneyPlanResponse: Codable {
+    let options: [JourneyOption]?
+    let summary: String?
+    let warnings: [String]?
+}
+
+struct JourneyOption: Codable, Identifiable {
+    let id: String
+    let legs: [JourneyLegResponse]
+    let totalDurationMinutes: Int
+    let changes: Int
+    let isDirect: Bool
+    let departureTime: String
+    let arrivalTime: String
+    let status: String
+    let warnings: [String]?
+}
+
+struct JourneyLegResponse: Codable {
+    let serviceId: String
+    let `operator`: String
+    let operatorCode: String
+    let origin: JourneyStationResponse
+    let destination: JourneyStationResponse
+    /// The train's own terminus ("towards Weymouth"), distinct from
+    /// `destination` — where this journey alights partway along the route.
+    let serviceDestination: String?
+    let scheduledDeparture: String
+    let expectedDeparture: String
+    let scheduledArrival: String
+    let expectedArrival: String
+    let status: String
+    let delayMinutes: Int
+    let callingPoints: [CallingPointResponse]?
+    let isCancelled: Bool
+    let cancelReason: String?
+    let delayReason: String?
+}
+
+struct JourneyStationResponse: Codable {
+    let name: String
+    let crs: String
+    let platform: String?
+}
+
 // MARK: - Stations
 
 struct StationResponse: Codable, Identifiable {

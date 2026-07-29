@@ -148,9 +148,25 @@ struct BoardScreen: View {
                         fastestHintCard
                     }
                     destinationSearchBar
-                    filterRow
-                    resultsRow
-                    trainList
+                    // A destination search asks "how do I get there?", not
+                    // "which trains leave here?" — so it gets whole journeys
+                    // (direct and via a change, from the backend planner)
+                    // instead of a direct-only board with a buried fallback.
+                    if let dest = filterDestination, !isArrival {
+                        JourneysSection(
+                            origin: station,
+                            destination: dest,
+                            accent: accent,
+                            onOpenTrain: onOpenTrain
+                        )
+                        .padding(.horizontal, 18)
+                        .padding(.top, 14)
+                        .padding(.bottom, 96)
+                    } else {
+                        filterRow
+                        resultsRow
+                        trainList
+                    }
                 }
             }
         }
