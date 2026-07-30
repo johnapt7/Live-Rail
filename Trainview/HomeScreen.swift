@@ -23,6 +23,8 @@ struct HomeScreen: View {
     @State private var locationManager = LocationManager()
     @State private var recentStore = RecentStationsStore.shared
     @State private var journeysStore = RecentJourneysStore.shared
+    /// Journey pending delete confirmation from the home list.
+    @State private var journeyToDelete: RecentJourney?
     @State private var homeStore = HomeStationsStore.shared
     @State private var showFAQ = false
     @State private var showAccount = false
@@ -710,9 +712,19 @@ struct HomeScreen: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.inkMute)
+                            // Removal must be discoverable, not buried in a
+                            // long-press menu — the x asks before deleting.
+                            Button {
+                                journeyToDelete = journey
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Theme.inkMute)
+                                    .frame(width: 26, height: 26)
+                                    .background(Theme.ink.opacity(0.06))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
@@ -749,6 +761,23 @@ struct HomeScreen: View {
         }
         .padding(.horizontal, 18)
         .padding(.top, 24)
+        .alert(
+            "Remove journey?",
+            isPresented: Binding(
+                get: { journeyToDelete != nil },
+                set: { if !$0 { journeyToDelete = nil } }
+            ),
+            presenting: journeyToDelete
+        ) { journey in
+            Button("Remove", role: .destructive) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    journeysStore.remove(journey)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { journey in
+            Text("To \(journey.destination.name) from \(journey.origin.name) will no longer appear on your home screen.")
+        }
     }
 
     // MARK: - Nearby
