@@ -276,11 +276,11 @@ struct HomeScreen: View {
         }
     }
 
-    /// Both ends chosen: record the journey and open the origin's board
-    /// already filtered to the destination (same path as a saved journey).
+    /// Both ends chosen: open the origin's board already filtered to the
+    /// destination. Searching is not saving — the journey reaches the home
+    /// screen only when the user stars it on the board.
     private func startJourney(from: Station, to: Station) {
         focusedField = nil
-        journeysStore.add(origin: from, destination: to)
         onPickJourney(RecentJourney(origin: from, destination: to))
     }
 

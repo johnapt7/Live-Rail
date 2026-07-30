@@ -645,13 +645,8 @@ struct BoardScreen: View {
         withAnimation(.easeOut(duration: 0.2)) {
             filterDestination = match
         }
-        // Record direction-correct: an arrivals filter means the user
-        // travels FROM the matched station TO this one.
-        if isArrival {
-            journeysStore.add(origin: match, destination: station)
-        } else {
-            journeysStore.add(origin: station, destination: match)
-        }
+        // Searching is not saving: the journey reaches the home screen only
+        // when the user stars it (the pin inserts it on demand).
         Task { await loadBoard() }
     }
 
